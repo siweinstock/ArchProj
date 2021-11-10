@@ -1,5 +1,4 @@
 // ArchProj.c : This file contains the 'main' function. Program execution begins and ends there.
-// Alon was here
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -22,16 +21,11 @@ MEM_WB* memwb;
 int branch_taken = 0;   // PCSrc
 
 void init() {
-    state = malloc(sizeof(State));
-    idex = malloc(sizeof(ID_EX));
-    exmem = malloc(sizeof(EX_MEM));
-    memwb = malloc(sizeof(MEM_WB));
-    ifid = malloc(sizeof(IF_ID));
-    memset(ifid, 0, sizeof(IF_ID));
-    memset(idex, 0, sizeof(ID_EX));
-    memset(exmem, 0, sizeof(EX_MEM));
-    memset(memwb, 0, sizeof(MEM_WB));
-    memset(state, 0, sizeof(State));
+    state = calloc(1, sizeof(State));
+    idex = calloc(1, sizeof(ID_EX));
+    exmem = calloc(1, sizeof(EX_MEM));
+    memwb = calloc(1, sizeof(MEM_WB));
+    ifid = calloc(1, sizeof(IF_ID));
 }
 
 // load memory image from file to memory
@@ -52,7 +46,14 @@ int load_instruction_memory(FILE* memfile, int img[], int mode) {
 }
 
 void fetch() {
-    ifid->pc = (branch_taken ? exmem->addr : state->pc);
+    if (branch_taken) {
+        ifid->pc = exmem->addr;
+        branch_taken = 0;
+    }
+    else {
+        ifid->pc = state->pc;
+    }
+    
     ifid->inst = imem_img[ifid->pc];
 }
 
@@ -79,7 +80,7 @@ void execute() {
 
     switch (idex->ALUOp) {
     case ADD:
-        exmem->result = idex->rs + (idex->RegDst ? idex->imm : idex->rt);
+        exmem->result = idex->rs + idex->rt;
         break;
     case SUB:
         exmem->result = idex->rs - idex->rt;
@@ -105,23 +106,16 @@ void execute() {
     case SRL:
         exmem->result = (int)((unsigned int)idex->rs >> idex->rt);
         break;
+            
     case BEQ:
-        exmem->addr = exmem->pc + idex->imm;
-        exmem->result = idex->rs - idex->imm;
-        exmem->Zero = (exmem->result == 0 ? 1 : 0);
-        branch_taken = (exmem->Zero == 0 ? 1 : 0);
+        if (exmem->rs == exmem->rt) {
+            exmem->addr = exmem->rd & 0x3FF;
+            branch_taken = 1;
+        }
         break;
     case BNE:
-        exmem->addr = exmem->pc + idex->imm;
-        exmem->result = idex->rs - idex->imm;
-        exmem->Zero = (exmem->result == 0 ? 1 : 0);
-        branch_taken = (exmem->Zero == 0 ? 0 : 1);
         break;
     case BLT:
-        exmem->addr = exmem->pc + idex->imm;
-        exmem->result = idex->rs - idex->imm;
-        exmem->Zero = (exmem->result == 0 ? 1 : 0);
-        branch_taken = (exmem->Zero == 0 ? 0 : 1);
         break;
     case BGT:
         break;
