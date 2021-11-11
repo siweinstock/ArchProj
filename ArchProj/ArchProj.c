@@ -63,7 +63,6 @@ int load_instruction_memory(FILE* memfile, int img[], int mode) {
 
 void fetch() {
     if (branch_taken) {
-        //printf("TAKEN!!!\n");
         ifid->pc = idex->addr;
         state->pc = ifid->pc + 1;
         branch_taken = 0;
@@ -252,10 +251,15 @@ int main(int argc, char* argv[]) {
 
     int count = 0;
     int start = 1;
+    int halting = 0;
+    int halt_prop = 0;
 
-    while (start || ifid->valid || exmem->valid) {
-    //for (int i = 0; i < 810; i++) {
+    //while (start || ifid->valid || exmem->valid) {
+    while (start || halt_prop < 3) {
+        //for (int i = 0; i < 810; i++) {
         start = 0;
+        if (halting)
+            halt_prop++;
 
         writeback();
         state->W = state->M;
@@ -267,7 +271,8 @@ int main(int argc, char* argv[]) {
         state->D = state->F;
         fetch();
         //state->F = ((ifid->inst & 0xFF000000) >> 24 == 0x14 ? -1 : ifid->pc);
-        state->F = (idex->ALUOp == 0x14 ? -1 : ifid->pc);
+        //state->F = (idex->ALUOp == 0x14 ? -1 : ifid->pc);
+        state->F = halting ? -1 : ifid->pc;
 
 
         if (SHOW_DUMP) {
@@ -279,6 +284,15 @@ int main(int argc, char* argv[]) {
             }
             printf("\n");
 
+        }
+
+        //state->F = ((idex->ALUOp == 0x14) ? -1 : ifid->pc);
+        if (idex->ALUOp == 0x14) {
+            halting = 1;
+            state->F = -1;
+        }
+        else {
+            state->F = ifid->pc;
         }
 
         if (SHOW_REGS) {
