@@ -20,6 +20,7 @@ int imem_img[IMEM_SIZE];
 int imem_size;
 
 int R[15] = { 0 };
+int tmp[15] = { 0 };
 
 State* state;
 IF_ID* ifid;
@@ -31,6 +32,11 @@ int branch_taken = 0;   // PCSrc
 
 void init() {
     state = calloc(1, sizeof(State));
+    state->F = -1;
+    state->D = -1;
+    state->E = -1;
+    state->M = -1;
+    state->W = -1;
     idex = calloc(1, sizeof(ID_EX));
     exmem = calloc(1, sizeof(EX_MEM));
     memwb = calloc(1, sizeof(MEM_WB));
@@ -66,7 +72,9 @@ void fetch() {
         ifid->pc = state->pc;
         state->pc += 1;
     }
-    
+
+    //printf("PC=%d/%d\n", ifid->pc, imem_size);
+
     ifid->inst = imem_img[ifid->pc];
     ifid->valid = (ifid->pc < imem_size ? 1 : 0);
 
@@ -76,6 +84,8 @@ void fetch() {
         else
             printf("fetch: ---\n");
     }
+
+    
 
     //check_halt();
 }
@@ -117,8 +127,10 @@ void execute() {
     exmem->valid = idex->valid;
 
     exmem->pc = idex->pc;
+    exmem->opcode = idex->ALUOp;
     exmem->RegWrite = idex->RegWrite;
     exmem->rd = idex->rd;
+
 
     switch (idex->ALUOp) {
     case ADD:
@@ -186,6 +198,8 @@ void execute() {
     case HALT:
         if (SHOW_CMD)
             printf("HALT\n");
+        exmem->valid = 0;
+
         break;
     }
 
@@ -199,6 +213,7 @@ void execute() {
 void memory() {
     memwb->valid = exmem->valid;
     memwb->pc = exmem->pc;
+    memwb->opcode = exmem->opcode;
 
     memwb->rd = exmem->rd;
     memwb->result = exmem->result;
@@ -218,9 +233,11 @@ void memory() {
 
 
 void writeback() {
-
+    
+    memcpy(R, tmp, 15 * sizeof(int));
     if (memwb->RegWrite) {
-        R[memwb->rd] = memwb->result;
+        tmp[memwb->rd] = memwb->result;
+        //printf("WB %d\n", state->W);
     }
         
 
@@ -234,26 +251,38 @@ int main(int argc, char* argv[]) {
     init();
 
     int count = 0;
+    int start = 1;
 
-    //while (memwb->opcode != HALT)
-    for (int i = 0; i < 800; i++) {
+    while (start || ifid->valid || exmem->valid) {
+    //for (int i = 0; i < 810; i++) {
+        start = 0;
+
+        writeback();
+        state->W = state->M;
+        memory();
+        state->M = state->E;
+        execute();
+        state->E = state->D;
+        decode();
+        state->D = state->F;
+        fetch();
+        //state->F = ((ifid->inst & 0xFF000000) >> 24 == 0x14 ? -1 : ifid->pc);
+        state->F = (idex->ALUOp == 0x14 ? -1 : ifid->pc);
+
 
         if (SHOW_DUMP) {
-            printf("%3d: ", ++count);
-            for (int j = 0; j < 15; j++) {
+            printf("%3d: ", count++);
+            printf("%3d - %3d - %3d - %3d - %3d | ", state->F, state->D, state->E, state->M, state->W);
+
+            for (int j = 2; j < 15; j++) {
                 printf("%3X, ", R[j]);
             }
             printf("\n");
 
         }
 
-        writeback();
-        memory();
-        execute();
-        decode();
-        fetch();
-
         if (SHOW_REGS) {
+
             for (int j = 0; j < 15; j++) {
                 printf("%3d, ", R[j]);
             }

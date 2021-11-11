@@ -104,17 +104,13 @@ typedef struct MEM_WB {
 
 typedef struct State {
     int pc;
-    uint32_t regs[16];
-} State;
+    int regs[16];
+    int F;
+    int D;
+    int E;
+    int M;
+    int W;
 
-// struct for holding fragments of parsed operation
-typedef struct Operation {
-    int opcode;
-    int imm;
-    int rd;
-    int rs;
-    int rt;
-    int op;
-} oper;
+} State;
 
 #endif //CORE0_CORE0_H
