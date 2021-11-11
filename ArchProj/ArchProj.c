@@ -7,10 +7,19 @@
 #include <string.h>
 #include "ArchProj.h"
 
+#define SHOW_CMD_BREAKDOWN      0
+#define SHOW_CONTROL_SIGNALS    0
+#define SHOW_CMD                0
+#define SHOW_REGS               0
+#define SHOW_DUMP               1
+
 #define IMEM_SIZE 1024
 #define IMEM_WIDTH 10
 
 int imem_img[IMEM_SIZE];
+int imem_size;
+
+int R[15] = { 0 };
 
 State* state;
 IF_ID* ifid;
@@ -27,6 +36,7 @@ void init() {
     memwb = calloc(1, sizeof(MEM_WB));
     ifid = calloc(1, sizeof(IF_ID));
 }
+
 
 // load memory image from file to memory
 // mode = number of bits in hex representation (5 or 8)
@@ -47,17 +57,31 @@ int load_instruction_memory(FILE* memfile, int img[], int mode) {
 
 void fetch() {
     if (branch_taken) {
-        ifid->pc = exmem->addr;
+        //printf("TAKEN!!!\n");
+        ifid->pc = idex->addr;
+        state->pc = ifid->pc + 1;
         branch_taken = 0;
     }
     else {
         ifid->pc = state->pc;
+        state->pc += 1;
     }
     
     ifid->inst = imem_img[ifid->pc];
+    ifid->valid = (ifid->pc < imem_size ? 1 : 0);
+
+    if (SHOW_CMD_BREAKDOWN) {
+        if (ifid->valid)
+            printf("fetch: %08X\n", ifid->inst);
+        else
+            printf("fetch: ---\n");
+    }
+
+    //check_halt();
 }
 
 void decode() {
+    idex->valid = ifid->valid;
     idex->pc = ifid->pc;
 
     idex->imm = (ifid->inst & 0xFFF); // sign extended immediate
@@ -72,15 +96,35 @@ void decode() {
     idex->RegWrite = (((idex->ALUOp >= ADD && idex->ALUOp <= SRL) ||
         (idex->ALUOp >= JAL && idex->ALUOp <= LW)) ? 1 : 0);
 
+    idex->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
+    idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
+
+
+    if (SHOW_CMD_BREAKDOWN) {
+        if (idex->valid)
+            printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
+        else
+            printf("decode: ---\n");
+    }
+
+    if (SHOW_CONTROL_SIGNALS && idex->valid)
+        printf("decode: RegDst=%d, ALUSrc=%d, Branch=%d, RegWrite=%d\n", idex->RegDst, idex->ALUSrc, idex->Branch, idex->RegWrite);
+        
+
 }
 
 void execute() {
+    exmem->valid = idex->valid;
+
     exmem->pc = idex->pc;
     exmem->RegWrite = idex->RegWrite;
+    exmem->rd = idex->rd;
 
     switch (idex->ALUOp) {
     case ADD:
-        exmem->result = idex->rs + idex->rt;
+        if (SHOW_CMD)
+            printf("Add\n");
+        exmem->result = idex->ReadData1 + idex->ReadData2;
         break;
     case SUB:
         exmem->result = idex->rs - idex->rt;
@@ -106,16 +150,25 @@ void execute() {
     case SRL:
         exmem->result = (int)((unsigned int)idex->rs >> idex->rt);
         break;
-            
+    
     case BEQ:
         if (exmem->rs == exmem->rt) {
-            exmem->addr = exmem->rd & 0x3FF;
+            //exmem->addr = exmem->rd & 0x3FF;
             branch_taken = 1;
         }
         break;
     case BNE:
+        if (SHOW_CMD)
+            printf("BNE\n");
         break;
     case BLT:
+        if (SHOW_CMD)
+            printf("BLT\n");
+        if (idex->ReadData1 < idex->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
+            //printf("BR TAK\n");
+            branch_taken = 1;
+        }
         break;
     case BGT:
         break;
@@ -125,22 +178,95 @@ void execute() {
         break;
     case JAL:
         break;
+    
     case LW:
         break;
     case SW:
         break;
     case HALT:
+        if (SHOW_CMD)
+            printf("HALT\n");
         break;
     }
+
+    if (SHOW_CMD_BREAKDOWN && exmem->valid)
+        printf("execute: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->rs, idex->rt, idex->rd, idex->ALUOp, idex->imm);
+    else if (SHOW_CMD_BREAKDOWN && !exmem->valid)
+        printf("execute: ---\n");
 }
+
+
+void memory() {
+    memwb->valid = exmem->valid;
+    memwb->pc = exmem->pc;
+
+    memwb->rd = exmem->rd;
+    memwb->result = exmem->result;
+
+    memwb->result = exmem->result;
+    memwb->RegWrite = exmem->RegWrite;
+
+    if (exmem->MemRead) {
+        //memwb->ReadData = exmem->result;
+        printf("RD=MEM[%X]\n", exmem->result);
+    }
+    else if (exmem->MemWrite) {
+        printf("MEM[%X]=RD\n", exmem->result);
+    }
+
+}
+
+
+void writeback() {
+
+    if (memwb->RegWrite) {
+        R[memwb->rd] = memwb->result;
+    }
+        
+
+}
+
 
 int main(int argc, char* argv[]) {
     FILE* f = fopen(argv[1], "r");
     int halt = 0;
-    int imem_size = load_instruction_memory(f, imem_img, 8);
-
+    imem_size = load_instruction_memory(f, imem_img, 8);
     init();
-    fetch();
+
+    int count = 0;
+
+    //while (memwb->opcode != HALT)
+    for (int i = 0; i < 800; i++) {
+
+        if (SHOW_DUMP) {
+            printf("%3d: ", ++count);
+            for (int j = 0; j < 15; j++) {
+                printf("%3X, ", R[j]);
+            }
+            printf("\n");
+
+        }
+
+        writeback();
+        memory();
+        execute();
+        decode();
+        fetch();
+
+        if (SHOW_REGS) {
+            for (int j = 0; j < 15; j++) {
+                printf("%3d, ", R[j]);
+            }
+            printf("\n");
+        }
+
+
+
+
+        if (SHOW_CMD || SHOW_CMD_BREAKDOWN || SHOW_CONTROL_SIGNALS || SHOW_REGS)
+            printf("------\n");
+    }
+
 
     return 0;
 }

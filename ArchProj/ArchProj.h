@@ -30,12 +30,17 @@
 
 
 typedef struct IF_ID {
+    int valid;
     int pc;
     int inst;
+
+    int PCSrc;
+
 } IF_ID;
 
 
 typedef struct ID_EX {
+    int valid;
     int pc;
     // parsed instruction
     int imm;
@@ -51,9 +56,16 @@ typedef struct ID_EX {
     int RegDst;
     int Branch;
 
+    int WriteData;
+    int ReadData1;
+    int ReadData2;
+
+    int addr;
+
 } ID_EX;
 
 typedef struct EX_MEM {
+    int valid;
     int pc;
     // parsed instruction
     int imm;
@@ -62,7 +74,7 @@ typedef struct EX_MEM {
     int rd;
     int opcode;
     int result;
-    int addr;
+    //int addr;
 
     // control signals
     int RegWrite;
@@ -74,7 +86,9 @@ typedef struct EX_MEM {
 } EX_MEM;
 
 typedef struct MEM_WB {
+    int valid;
     int pc;
+
     // parsed instruction
     int imm;
     int rt;
@@ -82,6 +96,10 @@ typedef struct MEM_WB {
     int rd;
     int opcode;
     int result;
+
+    int ReadData;
+    int RegWrite;
+
 } MEM_WB;
 
 typedef struct State {
