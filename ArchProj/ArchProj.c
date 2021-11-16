@@ -10,6 +10,7 @@
 #define SHOW_CMD_BREAKDOWN      0
 #define SHOW_CONTROL_SIGNALS    0
 #define SHOW_CMD                0
+#define SHOW_CMD_BLT            0
 #define SHOW_REGS               0
 #define SHOW_DUMP               1
 
@@ -29,6 +30,8 @@ EX_MEM* exmem;
 MEM_WB* memwb;
 
 int branch_taken = 0;   // PCSrc
+
+int hazard = 0;
 
 void init() {
     state = calloc(1, sizeof(State));
@@ -85,8 +88,6 @@ void fetch() {
     }
 
     
-
-    //check_halt();
 }
 
 void decode() {
@@ -129,6 +130,8 @@ void execute() {
     exmem->opcode = idex->ALUOp;
     exmem->RegWrite = idex->RegWrite;
     exmem->rd = idex->rd;
+    exmem->rs = idex->rs;
+    exmem->rt = idex->rt;
 
 
     switch (idex->ALUOp) {
@@ -173,11 +176,10 @@ void execute() {
             printf("BNE\n");
         break;
     case BLT:
-        if (SHOW_CMD)
-            printf("BLT\n");
+        if (SHOW_CMD_BLT)
+            printf("BLT %d<%d\n", idex->ReadData1, idex->ReadData2);
         if (idex->ReadData1 < idex->ReadData2) {
             idex->addr = idex->rd & 0x3FF;
-            //printf("BR TAK\n");
             branch_taken = 1;
         }
         break;
@@ -215,6 +217,8 @@ void memory() {
     memwb->opcode = exmem->opcode;
 
     memwb->rd = exmem->rd;
+    memwb->rs = exmem->rs;
+    memwb->rt = exmem->rt;
     memwb->result = exmem->result;
 
     memwb->result = exmem->result;
@@ -232,7 +236,6 @@ void memory() {
 
 
 void writeback() {
-    
     memcpy(R, tmp, 15 * sizeof(int));
     if (memwb->RegWrite) {
         tmp[memwb->rd] = memwb->result;
@@ -240,6 +243,21 @@ void writeback() {
     }
         
 
+}
+
+
+int hazard_detector() {
+    if (idex->valid && exmem->valid) {
+        if (idex->ALUOp == BLT) {
+            //printf("HAZ\n");
+            if (idex->rt == memwb->rd || idex->rs == memwb->rd) {
+                //printf("HAZARD\n");
+                return 2;
+            }
+        }
+    }
+
+    return 0;
 }
 
 
@@ -256,28 +274,84 @@ int main(int argc, char* argv[]) {
 
     //while (start || ifid->valid || exmem->valid) {
     while (start || halt_prop < 3) {
+
+
         //for (int i = 0; i < 810; i++) {
         start = 0;
         if (halting)
             halt_prop++;
 
+        
+
         writeback();
         state->W = state->M;
         memory();
         state->M = state->E;
-        execute();
-        state->E = state->D;
-        decode();
-        state->D = state->F;
-        fetch();
-        //state->F = ((ifid->inst & 0xFF000000) >> 24 == 0x14 ? -1 : ifid->pc);
-        //state->F = (idex->ALUOp == 0x14 ? -1 : ifid->pc);
-        state->F = halting ? -1 : ifid->pc;
+
+        if (!hazard) {
+            execute();
+            state->E = state->D;
+            decode();
+            state->D = state->F;
+            fetch();
+            state->F = halting ? -1 : ifid->pc;
+        }
+        // if hazard detected stall
+        else {
+            state->E = -2;
+        }
+
+        if (!hazard)
+            hazard = hazard_detector();
+        else
+            hazard--;
 
 
         if (SHOW_DUMP) {
-            printf("%3d: ", count++);
-            printf("%3d - %3d - %3d - %3d - %3d | ", state->F, state->D, state->E, state->M, state->W);
+            printf("%3d: ", count);
+            char stateF[10];
+            char stateD[10];
+            char stateE[10];
+            char stateM[10];
+            char stateW[10];
+
+            if (state->F < 0) {
+                strcpy(stateF, "-");
+            }
+            else {
+                _itoa(state->F, stateF, 10);
+            }
+
+            if (state->D < 0) {
+                strcpy(stateD, "-");
+            }
+            else {
+                _itoa(state->D, stateD, 10);
+            }
+
+            if (state->E < 0) {
+                strcpy(stateE, "-");
+            }
+            else {
+                _itoa(state->E, stateE, 10);
+            }
+
+            if (state->M < 0) {
+                strcpy(stateM, "-");
+            }
+            else {
+                _itoa(state->M, stateM, 10);
+            }
+
+            if (state->W < 0) {
+                strcpy(stateW, "-");
+            }
+            else {
+                _itoa(state->W, stateW, 10);
+            }
+
+
+            printf("%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
 
             for (int j = 2; j < 15; j++) {
                 printf("%3X, ", R[j]);
@@ -285,6 +359,7 @@ int main(int argc, char* argv[]) {
             printf("\n");
 
         }
+        count++;
 
         //state->F = ((idex->ALUOp == 0x14) ? -1 : ifid->pc);
         if (idex->ALUOp == 0x14) {
@@ -308,6 +383,8 @@ int main(int argc, char* argv[]) {
 
         if (SHOW_CMD || SHOW_CMD_BREAKDOWN || SHOW_CONTROL_SIGNALS || SHOW_REGS)
             printf("------\n");
+
+        //getchar();
     }
 
 
