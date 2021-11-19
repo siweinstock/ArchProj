@@ -75,6 +75,9 @@ typedef struct EX_MEM {
     int opcode;
     int result;
     //int addr;
+    int ReadData1;
+    int ReadData2;
+
 
     // control signals
     int RegWrite;

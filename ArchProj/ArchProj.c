@@ -23,6 +23,8 @@ int imem_size;
 int R[15] = { 0 };
 int tmp[15] = { 0 };
 
+int count = 0;
+
 State* state;
 IF_ID* ifid;
 ID_EX* idex;
@@ -110,12 +112,12 @@ void decode() {
     idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
 
 
-    if (SHOW_CMD_BREAKDOWN) {
-        if (idex->valid)
-            printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
-        else
-            printf("decode: ---\n");
-    }
+    //if (SHOW_CMD_BREAKDOWN) {
+    //    if (idex->valid)
+    //        printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
+    //    else
+    //        printf("decode: ---\n");
+    //}
 
     if (SHOW_CONTROL_SIGNALS && idex->valid)
         printf("decode: RegDst=%d, ALUSrc=%d, Branch=%d, RegWrite=%d\n", idex->RegDst, idex->ALUSrc, idex->Branch, idex->RegWrite);
@@ -124,6 +126,16 @@ void decode() {
 }
 
 void execute() {
+    exmem->ReadData1 = idex->ReadData1;
+    exmem->ReadData2 = idex->ReadData2;
+    //printf("%d was: %d %d. ", count, exmem->ReadData1, exmem->ReadData2);
+
+    // NOT SURE WHY LIKE THIS
+    //exmem->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
+    //exmem->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
+    //printf("now: %d %d.\n", exmem->ReadData1, exmem->ReadData2);
+
+
     exmem->valid = idex->valid;
 
     exmem->pc = idex->pc;
@@ -138,7 +150,7 @@ void execute() {
     case ADD:
         if (SHOW_CMD)
             printf("Add\n");
-        exmem->result = idex->ReadData1 + idex->ReadData2;
+        exmem->result = exmem->ReadData1 + exmem->ReadData2;
         break;
     case SUB:
         exmem->result = idex->rs - idex->rt;
@@ -177,8 +189,8 @@ void execute() {
         break;
     case BLT:
         if (SHOW_CMD_BLT)
-            printf("BLT %d<%d\n", idex->ReadData1, idex->ReadData2);
-        if (idex->ReadData1 < idex->ReadData2) {
+            printf("BLT %d<%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 < exmem->ReadData2) {
             idex->addr = idex->rd & 0x3FF;
             branch_taken = 1;
         }
@@ -240,6 +252,10 @@ void writeback() {
     if (memwb->RegWrite) {
         tmp[memwb->rd] = memwb->result;
         //printf("WB %d\n", state->W);
+
+        // make sure updated values are read
+        idex->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
+        idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
     }
         
 
@@ -247,16 +263,28 @@ void writeback() {
 
 
 int hazard_detector() {
+
     if (idex->valid && exmem->valid) {
-        if (idex->ALUOp == BLT) {
-            //printf("HAZ\n");
-            if (idex->rt == memwb->rd || idex->rs == memwb->rd) {
-                //printf("HAZARD\n");
-                return 2;
-            }
+        if (exmem->rd == idex->rs && exmem->rd != 0) {
+            printf("HAZARD 1a {%d %d}\n", exmem->pc, idex->pc);
+            return 3;
+        }
+        if (exmem->rd == idex->rt && exmem->rd != 0) {
+            printf("HAZARD 1b {%d %d}\n", exmem->pc, idex->pc);
+            return 3;
         }
     }
 
+    if (idex->valid && memwb->valid) {
+        if (memwb->rd == idex->rs && memwb->rd != 0) {
+            //printf("HAZARD 2a {%d %d}\n", memwb->pc, idex->pc);
+            return 2;
+        }
+        if (memwb->rd == idex->rt && memwb->rd != 0) {
+            printf("HAZARD 2b {%d %d}\n", memwb->pc, idex->pc);
+            return 2;
+        }
+    }
     return 0;
 }
 
@@ -267,7 +295,7 @@ int main(int argc, char* argv[]) {
     imem_size = load_instruction_memory(f, imem_img, 8);
     init();
 
-    int count = 0;
+    
     int start = 1;
     int halting = 0;
     int halt_prop = 0;
