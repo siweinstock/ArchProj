@@ -10,7 +10,7 @@
 #define SHOW_CMD_BREAKDOWN      0
 #define SHOW_CONTROL_SIGNALS    0
 #define SHOW_CMD                0
-#define SHOW_CMD_BLT            0
+#define SHOW_BRANCH             0
 #define SHOW_REGS               0
 #define SHOW_DUMP               1
 
@@ -77,8 +77,6 @@ void fetch() {
         state->pc += 1;
     }
 
-    //printf("PC=%d/%d\n", ifid->pc, imem_size);
-
     ifid->inst = imem_img[ifid->pc];
     ifid->valid = (ifid->pc < imem_size ? 1 : 0);
 
@@ -112,12 +110,12 @@ void decode() {
     idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
 
 
-    //if (SHOW_CMD_BREAKDOWN) {
-    //    if (idex->valid)
-    //        printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
-    //    else
-    //        printf("decode: ---\n");
-    //}
+    if (SHOW_CMD_BREAKDOWN) {
+        if (idex->valid)
+            printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
+        else
+            printf("decode: ---\n");
+    }
 
     if (SHOW_CONTROL_SIGNALS && idex->valid)
         printf("decode: RegDst=%d, ALUSrc=%d, Branch=%d, RegWrite=%d\n", idex->RegDst, idex->ALUSrc, idex->Branch, idex->RegWrite);
@@ -135,16 +133,13 @@ void execute() {
     //exmem->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
     //printf("now: %d %d.\n", exmem->ReadData1, exmem->ReadData2);
 
-
     exmem->valid = idex->valid;
-
     exmem->pc = idex->pc;
     exmem->opcode = idex->ALUOp;
     exmem->RegWrite = idex->RegWrite;
     exmem->rd = idex->rd;
     exmem->rs = idex->rs;
     exmem->rt = idex->rt;
-
 
     switch (idex->ALUOp) {
     case ADD:
@@ -153,42 +148,48 @@ void execute() {
         exmem->result = exmem->ReadData1 + exmem->ReadData2;
         break;
     case SUB:
-        exmem->result = idex->rs - idex->rt;
+        exmem->result = exmem->ReadData1 - exmem->ReadData2;
         break;
     case AND:
-        exmem->result = idex->rs & idex->rt;
+        exmem->result = exmem->ReadData1 & exmem->ReadData2;
         break;
     case OR:
-        exmem->result = idex->rs | idex->rt;
+        exmem->result = exmem->ReadData1 | exmem->ReadData2;
         break;
     case XOR:
-        exmem->result = idex->rs ^ idex->rt;
+        exmem->result = exmem->ReadData1 ^ exmem->ReadData2;
         break;
     case MUL:
-        exmem->result = idex->rs * idex->rt;
+        exmem->result = exmem->ReadData1 * exmem->ReadData2;
         break;
     case SLL:
-        exmem->result = idex->rs << idex->rt;
+        exmem->result = exmem->ReadData1 << exmem->ReadData2;
         break;
     case SRA:
-        exmem->result = idex->rs >> idex->rt;
+        exmem->result = exmem->ReadData1 >> exmem->ReadData2;
         break;
     case SRL:
-        exmem->result = (int)((unsigned int)idex->rs >> idex->rt);
+        exmem->result = (int)((unsigned int)exmem->ReadData1 >> exmem->ReadData2);
         break;
     
     case BEQ:
-        if (exmem->rs == exmem->rt) {
-            //exmem->addr = exmem->rd & 0x3FF;
+        if (SHOW_BRANCH)
+            printf("BEQ %d==%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 == exmem->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
             branch_taken = 1;
         }
         break;
     case BNE:
-        if (SHOW_CMD)
-            printf("BNE\n");
+        if (SHOW_BRANCH)
+            printf("BNE %d!=%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 != exmem->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
+            branch_taken = 1;
+        }
         break;
     case BLT:
-        if (SHOW_CMD_BLT)
+        if (SHOW_BRANCH)
             printf("BLT %d<%d\n", exmem->ReadData1, exmem->ReadData2);
         if (exmem->ReadData1 < exmem->ReadData2) {
             idex->addr = idex->rd & 0x3FF;
@@ -196,14 +197,37 @@ void execute() {
         }
         break;
     case BGT:
+        if (SHOW_BRANCH)
+            printf("BGT %d>%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 > exmem->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
+            branch_taken = 1;
+        }
         break;
     case BLE:
+        if (SHOW_BRANCH)
+            printf("BLE %d<=%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 <= exmem->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
+            branch_taken = 1;
+        }
         break;
     case BGE:
+        if (SHOW_BRANCH)
+            printf("BGE %d>=%d\n", exmem->ReadData1, exmem->ReadData2);
+        if (exmem->ReadData1 >= exmem->ReadData2) {
+            idex->addr = idex->rd & 0x3FF;
+            branch_taken = 1;
+        }
         break;
     case JAL:
+        if (SHOW_BRANCH)
+            printf("JAL\n");
+        R[15] = state->pc + 1;
+        idex->addr = idex->rd & 0x3FF;
+        branch_taken = 1;
         break;
-    
+
     case LW:
         break;
     case SW:
