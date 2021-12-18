@@ -7,45 +7,50 @@
 #include <string.h>
 #include "ArchProj.h"
 
-#define SHOW_CMD_BREAKDOWN      0
+/*#define SHOW_CMD_BREAKDOWN      0
 #define SHOW_CONTROL_SIGNALS    0
 #define SHOW_CMD                0
 #define SHOW_BRANCH             0
 #define SHOW_REGS               0
+*/
 #define SHOW_DUMP               1
+
 
 #define IMEM_SIZE 1024
 #define IMEM_WIDTH 10
 
-int imem_img[IMEM_SIZE];
-int imem_size;
+int imem_img[4][IMEM_SIZE];
+int imem_size[4];
 
-int R[15] = { 0 };
-int tmp[15] = { 0 };
+int R[4][16] = { 0 };
+int tmp[4][16] = { 0 };
 
-int count = 0;
+int count[4] = { 0 };
 
-State* state;
-IF_ID* ifid;
-ID_EX* idex;
-EX_MEM* exmem;
-MEM_WB* memwb;
+State* state[4];
+IF_ID* ifid[4];
+ID_EX* idex[4];
+EX_MEM* exmem[4];
+MEM_WB* memwb[4];
 
-int branch_taken = 0;   // PCSrc
+int branch_taken[4] = { 0 };   // PCSrc
 
-int hazard = 0;
+int hazard[4] = { 0 };
 
 void init() {
-    state = calloc(1, sizeof(State));
-    state->F = -1;
-    state->D = -1;
-    state->E = -1;
-    state->M = -1;
-    state->W = -1;
-    idex = calloc(1, sizeof(ID_EX));
-    exmem = calloc(1, sizeof(EX_MEM));
-    memwb = calloc(1, sizeof(MEM_WB));
-    ifid = calloc(1, sizeof(IF_ID));
+    int i;
+    for (i = 0; i < 4; i++) {
+        state[i] = calloc(1, sizeof(State));
+        state[i]->F = -1;
+        state[i]->D = -1;
+        state[i]->E = -1;
+        state[i]->M = -1;
+        state[i]->W = -1;
+        idex[i] = calloc(1, sizeof(ID_EX));
+        exmem[i] = calloc(1, sizeof(EX_MEM));
+        memwb[i] = calloc(1, sizeof(MEM_WB));
+        ifid[i] = calloc(1, sizeof(IF_ID));
+    }
 }
 
 
@@ -66,166 +71,124 @@ int load_instruction_memory(FILE* memfile, int img[], int mode) {
     return i;
 }
 
-void fetch() {
-    if (branch_taken) {
-        ifid->pc = idex->addr;
-        state->pc = ifid->pc + 1;
-        branch_taken = 0;
+void fetch(int id) {
+    if (branch_taken[id]) {
+        ifid[id]->pc = idex[id]->addr;
+        state[id]->pc = ifid[id]->pc + 1;
+        branch_taken[id] = 0;
     }
     else {
-        ifid->pc = state->pc;
-        state->pc += 1;
+        ifid[id]->pc = state[id]->pc;
+        state[id]->pc += 1;
     }
 
-    ifid->inst = imem_img[ifid->pc];
-    ifid->valid = (ifid->pc < imem_size ? 1 : 0);
-
-    if (SHOW_CMD_BREAKDOWN) {
-        if (ifid->valid)
-            printf("fetch: %08X\n", ifid->inst);
-        else
-            printf("fetch: ---\n");
-    }
-
-    
-}
-
-void decode() {
-    idex->valid = ifid->valid;
-    idex->pc = ifid->pc;
-
-    idex->imm = (ifid->inst & 0xFFF); // sign extended immediate
-    idex->rt = (ifid->inst >> 12) & 0xF;
-    idex->rs = (ifid->inst >> 16) & 0xF;
-    idex->rd = (ifid->inst >> 20) & 0xF;
-    idex->ALUOp = (ifid->inst >> 24) & 0xFF;
-
-    idex->RegDst = (idex->rs != 1) && (idex->rt != 1);
-    idex->ALUSrc = ((idex->rs == 1 || idex->rt == 1) ? 1 : 0);  // is immediate involved?
-    idex->Branch = ((idex->ALUOp >= BEQ && idex->ALUOp <= JAL) ? 1 : 0); // is branch command?
-    idex->RegWrite = (((idex->ALUOp >= ADD && idex->ALUOp <= SRL) ||
-        (idex->ALUOp >= JAL && idex->ALUOp <= LW)) ? 1 : 0);
-
-    idex->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
-    idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
-
-
-    if (SHOW_CMD_BREAKDOWN) {
-        if (idex->valid)
-            printf("decode: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->ReadData1, idex->ReadData2, idex->rd, idex->ALUOp, idex->imm);
-        else
-            printf("decode: ---\n");
-    }
-
-    if (SHOW_CONTROL_SIGNALS && idex->valid)
-        printf("decode: RegDst=%d, ALUSrc=%d, Branch=%d, RegWrite=%d\n", idex->RegDst, idex->ALUSrc, idex->Branch, idex->RegWrite);
-        
+    ifid[id]->inst = imem_img[id][ifid[id]->pc];
+    ifid[id]->valid = (ifid[id]->pc < imem_size[id] ? 1 : 0);
 
 }
 
-void execute() {
-    exmem->ReadData1 = idex->ReadData1;
-    exmem->ReadData2 = idex->ReadData2;
-    //printf("%d was: %d %d. ", count, exmem->ReadData1, exmem->ReadData2);
+void decode(int id) {
+    idex[id]->valid = ifid[id]->valid;
+    idex[id]->pc = ifid[id]->pc;
 
-    // NOT SURE WHY LIKE THIS
-    //exmem->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
-    //exmem->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
-    //printf("now: %d %d.\n", exmem->ReadData1, exmem->ReadData2);
+    idex[id]->imm = (ifid[id]->inst & 0xFFF); // sign extended immediate
+    idex[id]->rt = (ifid[id]->inst >> 12) & 0xF;
+    idex[id]->rs = (ifid[id]->inst >> 16) & 0xF;
+    idex[id]->rd = (ifid[id]->inst >> 20) & 0xF;
+    idex[id]->ALUOp = (ifid[id]->inst >> 24) & 0xFF;
 
-    exmem->valid = idex->valid;
-    exmem->pc = idex->pc;
-    exmem->opcode = idex->ALUOp;
-    exmem->RegWrite = idex->RegWrite;
-    exmem->rd = idex->rd;
-    exmem->rs = idex->rs;
-    exmem->rt = idex->rt;
+    idex[id]->RegDst = (idex[id]->rs != 1) && (idex[id]->rt != 1);
+    idex[id]->ALUSrc = ((idex[id]->rs == 1 || idex[id]->rt == 1) ? 1 : 0);  // is immediate involved?
+    idex[id]->Branch = ((idex[id]->ALUOp >= BEQ && idex[id]->ALUOp <= JAL) ? 1 : 0); // is branch command?
+    idex[id]->RegWrite = (((idex[id]->ALUOp >= ADD && idex[id]->ALUOp <= SRL) ||
+        (idex[id]->ALUOp >= JAL && idex[id]->ALUOp <= LW)) ? 1 : 0);
 
-    switch (idex->ALUOp) {
+    idex[id]->ReadData1 = (idex[id]->rs == 1 ? idex[id]->imm : R[id][idex[id]->rs]);
+    idex[id]->ReadData2 = (idex[id]->rt == 1 ? idex[id]->imm : R[id][idex[id]->rt]);
+
+}
+
+void execute(int id) {
+    exmem[id]->ReadData1 = idex[id]->ReadData1;
+    exmem[id]->ReadData2 = idex[id]->ReadData2;
+
+    exmem[id]->valid = idex[id]->valid;
+    exmem[id]->pc = idex[id]->pc;
+    exmem[id]->opcode = idex[id]->ALUOp;
+    exmem[id]->RegWrite = idex[id]->RegWrite;
+    exmem[id]->rd = idex[id]->rd;
+    exmem[id]->rs = idex[id]->rs;
+    exmem[id]->rt = idex[id]->rt;
+
+    switch (idex[id]->ALUOp) {
     case ADD:
-        if (SHOW_CMD)
-            printf("Add\n");
-        exmem->result = exmem->ReadData1 + exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         break;
     case SUB:
-        exmem->result = exmem->ReadData1 - exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 - exmem[id]->ReadData2;
         break;
     case AND:
-        exmem->result = exmem->ReadData1 & exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 & exmem[id]->ReadData2;
         break;
     case OR:
-        exmem->result = exmem->ReadData1 | exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 | exmem[id]->ReadData2;
         break;
     case XOR:
-        exmem->result = exmem->ReadData1 ^ exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 ^ exmem[id]->ReadData2;
         break;
     case MUL:
-        exmem->result = exmem->ReadData1 * exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 * exmem[id]->ReadData2;
         break;
     case SLL:
-        exmem->result = exmem->ReadData1 << exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 << exmem[id]->ReadData2;
         break;
     case SRA:
-        exmem->result = exmem->ReadData1 >> exmem->ReadData2;
+        exmem[id]->result = exmem[id]->ReadData1 >> exmem[id]->ReadData2;
         break;
     case SRL:
-        exmem->result = (int)((unsigned int)exmem->ReadData1 >> exmem->ReadData2);
+        exmem[id]->result = (int)((unsigned int)exmem[id]->ReadData1 >> exmem[id]->ReadData2);
         break;
-    
+
     case BEQ:
-        if (SHOW_BRANCH)
-            printf("BEQ %d==%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 == exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 == exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case BNE:
-        if (SHOW_BRANCH)
-            printf("BNE %d!=%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 != exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 != exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case BLT:
-        if (SHOW_BRANCH)
-            printf("BLT %d<%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 < exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 < exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case BGT:
-        if (SHOW_BRANCH)
-            printf("BGT %d>%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 > exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 > exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case BLE:
-        if (SHOW_BRANCH)
-            printf("BLE %d<=%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 <= exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 <= exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case BGE:
-        if (SHOW_BRANCH)
-            printf("BGE %d>=%d\n", exmem->ReadData1, exmem->ReadData2);
-        if (exmem->ReadData1 >= exmem->ReadData2) {
-            idex->addr = idex->rd & 0x3FF;
-            branch_taken = 1;
+        if (exmem[id]->ReadData1 >= exmem[id]->ReadData2) {
+            idex[id]->addr = idex[id]->rd & 0x3FF;
+            branch_taken[id] = 1;
         }
         break;
     case JAL:
-        if (SHOW_BRANCH)
-            printf("JAL\n");
-        R[15] = state->pc + 1;
-        idex->addr = idex->rd & 0x3FF;
-        branch_taken = 1;
+        R[id][15] = state[id]->pc + 1;
+        idex[id]->addr = idex[id]->rd & 0x3FF;
+        branch_taken[id] = 1;
         break;
 
     case LW:
@@ -233,79 +196,71 @@ void execute() {
     case SW:
         break;
     case HALT:
-        if (SHOW_CMD)
-            printf("HALT\n");
-        exmem->valid = 0;
-
+        exmem[id]->valid = 0;
         break;
     }
-
-    if (SHOW_CMD_BREAKDOWN && exmem->valid)
-        printf("execute: RS=%X, RT=%X, RD=%X, OP=%02X IMM=%03X\n", idex->rs, idex->rt, idex->rd, idex->ALUOp, idex->imm);
-    else if (SHOW_CMD_BREAKDOWN && !exmem->valid)
-        printf("execute: ---\n");
 }
 
 
-void memory() {
-    memwb->valid = exmem->valid;
-    memwb->pc = exmem->pc;
-    memwb->opcode = exmem->opcode;
+void memory(int id) {
+    memwb[id]->valid = exmem[id]->valid;
+    memwb[id]->pc = exmem[id]->pc;
+    memwb[id]->opcode = exmem[id]->opcode;
 
-    memwb->rd = exmem->rd;
-    memwb->rs = exmem->rs;
-    memwb->rt = exmem->rt;
-    memwb->result = exmem->result;
+    memwb[id]->rd = exmem[id]->rd;
+    memwb[id]->rs = exmem[id]->rs;
+    memwb[id]->rt = exmem[id]->rt;
+    memwb[id]->result = exmem[id]->result;
 
-    memwb->result = exmem->result;
-    memwb->RegWrite = exmem->RegWrite;
+    memwb[id]->result = exmem[id]->result;
+    memwb[id]->RegWrite = exmem[id]->RegWrite;
 
-    if (exmem->MemRead) {
+    if (exmem[id]->MemRead) {
         //memwb->ReadData = exmem->result;
-        printf("RD=MEM[%X]\n", exmem->result);
+        printf("RD=MEM[%X]\n", exmem[id]->result);
     }
-    else if (exmem->MemWrite) {
-        printf("MEM[%X]=RD\n", exmem->result);
+    else if (exmem[id]->MemWrite) {
+        printf("MEM[%X]=RD\n", exmem[id]->result);
     }
 
 }
 
 
-void writeback() {
-    memcpy(R, tmp, 15 * sizeof(int));
-    if (memwb->RegWrite) {
-        tmp[memwb->rd] = memwb->result;
+void writeback(int id) {
+    memcpy(R[id], tmp[id], 16 * sizeof(int));
+    if (memwb[id]->RegWrite) {
+        tmp[id][memwb[id]->rd] = memwb[id]->result;
         //printf("WB %d\n", state->W);
 
         // make sure updated values are read
-        idex->ReadData1 = (idex->rs == 1 ? idex->imm : R[idex->rs]);
-        idex->ReadData2 = (idex->rt == 1 ? idex->imm : R[idex->rt]);
+        idex[id]->ReadData1 = (idex[id]->rs == 1 ? idex[id]->imm : R[id][idex[id]->rs]);
+        idex[id]->ReadData2 = (idex[id]->rt == 1 ? idex[id]->imm : R[id][idex[id]->rt]);
     }
-        
+
 
 }
 
 
-int hazard_detector() {
+int hazard_detector(int id) {
 
-    if (idex->valid && exmem->valid) {
-        if (exmem->rd == idex->rs && exmem->rd != 0) {
-            printf("HAZARD 1a {%d %d}\n", exmem->pc, idex->pc);
+    if (idex[id]->valid && exmem[id]->valid) {
+        if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd != 0) {
+            printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
-        if (exmem->rd == idex->rt && exmem->rd != 0) {
-            printf("HAZARD 1b {%d %d}\n", exmem->pc, idex->pc);
+        if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd != 0) {
+            printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
     }
 
-    if (idex->valid && memwb->valid) {
-        if (memwb->rd == idex->rs && memwb->rd != 0) {
+    if (idex[id]->valid && memwb[id]->valid) {
+        if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd != 0) {
             //printf("HAZARD 2a {%d %d}\n", memwb->pc, idex->pc);
             return 2;
         }
-        if (memwb->rd == idex->rt && memwb->rd != 0) {
-            printf("HAZARD 2b {%d %d}\n", memwb->pc, idex->pc);
+        if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd != 0) {
+            printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
     }
@@ -314,143 +269,126 @@ int hazard_detector() {
 
 
 int main(int argc, char* argv[]) {
-    FILE* f = fopen(argv[1], "r");
+    FILE* f[4]; // = fopen(argv[1], "r");
+    FILE* fout[4];
+    char* nout[4] = { "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt" };
     int halt = 0;
-    imem_size = load_instruction_memory(f, imem_img, 8);
+    int id;
+    //imem_size = load_instruction_memory(f, imem_img, 8);
+    for (id = 0; id < 4; id++) {
+        f[id] = fopen(argv[id + 1], "r");
+        fout[id] = fopen(nout[id], "w");
+        imem_size[id] = load_instruction_memory(f[id], imem_img[id], 8);
+    }
     init();
 
-    
+
     int start = 1;
-    int halting = 0;
-    int halt_prop = 0;
+    int halting[4] = { 0 };
+    int halt_prop[4] = { 0 };
 
-    //while (start || ifid->valid || exmem->valid) {
-    while (start || halt_prop < 3) {
-
-
-        //for (int i = 0; i < 810; i++) {
+    while (start || halt_prop[0] < 3 || halt_prop[1] < 3 || halt_prop[2] < 3 || halt_prop[3] < 3) {
         start = 0;
-        if (halting)
-            halt_prop++;
+        for (id = 0; id < 4; id++) {
+            if (halt_prop[id] == 3) // core stopped
+                continue;
+            if (halting[id])
+                halt_prop[id]++;
 
-        
+            writeback(id);
+            state[id]->W = state[id]->M;
+            memory(id);
+            state[id]->M = state[id]->E;
 
-        writeback();
-        state->W = state->M;
-        memory();
-        state->M = state->E;
+            if (!hazard[id]) {
+                execute(id);
+                state[id]->E = state[id]->D;
+                decode(id);
+                state[id]->D = state[id]->F;
+                fetch(id);
+                state[id]->F = halting[id] ? -1 : ifid[id]->pc;
+            }
+            // if hazard detected stall
+            else {
+                state[id]->E = -2;
+            }
 
-        if (!hazard) {
-            execute();
-            state->E = state->D;
-            decode();
-            state->D = state->F;
-            fetch();
-            state->F = halting ? -1 : ifid->pc;
-        }
-        // if hazard detected stall
-        else {
-            state->E = -2;
-        }
+            if (!hazard[id])
+                hazard[id] = hazard_detector(id);
+            else
+                hazard[id]--;
 
-        if (!hazard)
-            hazard = hazard_detector();
-        else
-            hazard--;
+            if (SHOW_DUMP) {
+                fprintf(fout[id], "%3d: ", count[id]);
+                char stateF[10];
+                char stateD[10];
+                char stateE[10];
+                char stateM[10];
+                char stateW[10];
+
+                if (state[id]->F < 0) {
+                    strcpy(stateF, "-");
+                }
+                else {
+                    _itoa(state[id]->F, stateF, 10);
+                }
+
+                if (state[id]->D < 0) {
+                    strcpy(stateD, "-");
+                }
+                else {
+                    _itoa(state[id]->D, stateD, 10);
+                }
+
+                if (state[id]->E < 0) {
+                    strcpy(stateE, "-");
+                }
+                else {
+                    _itoa(state[id]->E, stateE, 10);
+                }
+
+                if (state[id]->M < 0) {
+                    strcpy(stateM, "-");
+                }
+                else {
+                    _itoa(state[id]->M, stateM, 10);
+                }
+
+                if (state[id]->W < 0) {
+                    strcpy(stateW, "-");
+                }
+                else {
+                    _itoa(state[id]->W, stateW, 10);
+                }
 
 
-        if (SHOW_DUMP) {
-            printf("%3d: ", count);
-            char stateF[10];
-            char stateD[10];
-            char stateE[10];
-            char stateM[10];
-            char stateW[10];
+                fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
 
-            if (state->F < 0) {
-                strcpy(stateF, "-");
+                for (int j = 2; j < 15; j++) {
+                    fprintf(fout[id], "%3X, ", R[id][j]);
+                }
+                fprintf(fout[id], "\n");
+
+            }
+            count[id]++;
+
+            if (idex[id]->ALUOp == 0x14) {
+                halting[id] = 1;
+                state[id]->F = -1;
             }
             else {
-                _itoa(state->F, stateF, 10);
+                state[id]->F = ifid[id]->pc;
             }
-
-            if (state->D < 0) {
-                strcpy(stateD, "-");
-            }
-            else {
-                _itoa(state->D, stateD, 10);
-            }
-
-            if (state->E < 0) {
-                strcpy(stateE, "-");
-            }
-            else {
-                _itoa(state->E, stateE, 10);
-            }
-
-            if (state->M < 0) {
-                strcpy(stateM, "-");
-            }
-            else {
-                _itoa(state->M, stateM, 10);
-            }
-
-            if (state->W < 0) {
-                strcpy(stateW, "-");
-            }
-            else {
-                _itoa(state->W, stateW, 10);
-            }
-
-
-            printf("%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
-
-            for (int j = 2; j < 15; j++) {
-                printf("%3X, ", R[j]);
-            }
-            printf("\n");
 
         }
-        count++;
 
-        //state->F = ((idex->ALUOp == 0x14) ? -1 : ifid->pc);
-        if (idex->ALUOp == 0x14) {
-            halting = 1;
-            state->F = -1;
-        }
-        else {
-            state->F = ifid->pc;
-        }
+    }
 
-        if (SHOW_REGS) {
-
-            for (int j = 0; j < 15; j++) {
-                printf("%3d, ", R[j]);
-            }
-            printf("\n");
-        }
-
-
-
-
-        if (SHOW_CMD || SHOW_CMD_BREAKDOWN || SHOW_CONTROL_SIGNALS || SHOW_REGS)
-            printf("------\n");
-
-        //getchar();
+    for (id = 0; id < 4; id++) {
+        fclose(fout[id]);
+        fclose(f[id]);
     }
 
 
     return 0;
 }
-
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
