@@ -179,15 +179,12 @@ void PrRd(PR_REQ* request) {
 		if (tsram->MESI[index]) { // The state is all but invalid (not 0, cache hit) 
 			request->data = dsram->sram[index][offset]; // we take the content and do not involve the bus
 			request->done = 1;
-			//printf("here");
 			return;
 		}
 		else { // The block is invalid (state I)
-			// Setting a bus request for reading
-			
+			// Setting a bus request for reading			
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
-			//printf("core_index = %d\n", core_index);
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
 			requests[core_index]->addr = addr;
@@ -200,6 +197,7 @@ void PrRd(PR_REQ* request) {
 	else { // Cache miss (tricky part)
 		if (tsram->MESI[index] != MODIFIED) {
 			// BusRd
+			tsram->tags[index] = tag;
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
@@ -212,7 +210,6 @@ void PrRd(PR_REQ* request) {
 		}
 		else {
 			// Flush + BusRd
-			//printf("in3");
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
@@ -243,7 +240,6 @@ void PrWr(PR_REQ* request) {
 	pr_requests[core_index] = request;
 
 	if (tag == tsram->tags[index]) { // If the block is in the cache
-		
 		if (tsram->MESI[index] == MODIFIED) { // the state is M so we just modify the content
 			dsram->sram[index][offset] = request->data;
 			request->done = 1;
@@ -282,7 +278,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->data = request->data;
 			requests[core_index]->type = FLUSH_BUSRDX; // indicate Flush + BusRdX
 			core_has_request[core_index] = 1;
-			return;
+			
 		}
 		else {
 			// Setting a bus request for BusRdX
@@ -295,12 +291,12 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
-			return;
+			
 		}
 
 		// ??? we need here to update the tag to the new one ???
 
-		//tsram->tags[index] = tag;
+		tsram->tags[index] = tag;
 
 		// ???
 
@@ -333,9 +329,11 @@ void core_i_snoop(int i) {
 	TSRAM* tsram = tsrams_array[i];
 	DSRAM* dsram = dsrams_array[i];
 	if (tsram->tags[index] != tag || bus_cmd == NO_CMD ) { // Checking if we even have the block in the cache and have a command in the bus
+
 		return;
 	}
 	if (tsram->MESI[index] == INVALID && curr_request->core_index != i) { // ?? not sure about this ??
+
 		return;
 	}
 
@@ -344,7 +342,7 @@ void core_i_snoop(int i) {
 	}
 	if (bus_cmd == BUSRD) { // BusRd - need to do something if the block is in state M or E
 		if (tsram->MESI[index] == MODIFIED) { // state of the block in this core cache is modified so we need to flush the content
-			//printf("here\n");
+
 			bus_origid = i; // core i
 			flush_next = 1; // flush
 			bus_addr = bus_addr & 0xFFFFC; // the first word in the block
@@ -359,15 +357,15 @@ void core_i_snoop(int i) {
 			tsram->MESI[index] = SHARED; // The block is now in shared state
 		}
 		if (tsram->MESI[index] != INVALID) {
-			//printf("shared");
+
 			bus_shared = 1; // telling the cache that reads that he is not the only one who have this block
 		}
 		
 	}
 	else if (bus_cmd == BUSRDX) { // BusRdX - we invalidate the block anyways and flush if in M mode
-		//printf("here!!!!!\n");
+
 		if (tsram->MESI[index] == MODIFIED) { // state of the block in this core cache is modified so we need to flush the content
-			//printf("here!!!!!\n");
+
 			bus_origid = i; // core i
 			flush_next = 1; // flush
 			bus_addr = bus_addr & 0xFFFFC; // the first word in the block
@@ -394,6 +392,7 @@ void place_request_on_bus() {
 		memory_rd = 1; // Memory needs to respond
 		if (type == BUSRDX) {
 			modify_after_rdx = 1;
+
 		}
 	}
 	else{
@@ -405,7 +404,7 @@ void place_request_on_bus() {
 			bus_addr = ((tsrams_array[bus_origid]->tags[curr_request->index] << 8) | 0x000000FC) & (curr_request->index << 2); // the first word in the block
 		}
 		else if (type == FLUSH_BUSRDX) {
-			//printf("here\n");
+
 			rdx_after_flush = 1;
 			bus_addr = ((tsrams_array[bus_origid]->tags[curr_request->index] << 8) | 0x000000FC) & (curr_request->index << 2); // the first word in the block
 		}
@@ -421,17 +420,15 @@ void bus_logic_before_snooping() {
 	int index = (bus_addr >> 2) & 0x3F;
 	int tag = (bus_addr >> 8) & 0xFFF;
 	if (bus_cmd == BUSRD || bus_cmd == BUSRDX) {
-		//printf("here1\n");
+
 		if (!count_down_to_first_word && memory_rd) { // its time for main memory to shine
-			//printf("here2\n");
+
 			if (bus_cmd == BUSRD) {
 				
 				if (bus_shared) { // we know others have the block
-					//printf("here\n");
 					tsrams_array[bus_origid]->MESI[index] = SHARED;
 				}
 				else { // only us have it
-					//printf("1\n");
 					tsrams_array[bus_origid]->MESI[index] = EXCLUSIVE;
 				}
 			}
@@ -448,11 +445,9 @@ void bus_logic_before_snooping() {
 	}
 	if (bus_cmd == FLUSH) {
 		if (bus_origid == 4) { // Main memory flush
-			//printf("bus_addr = %d\n", bus_addr);
 			bus_data = main_memory[bus_addr]; // flushing to bus
 		}
 		else { // cache is flushing
-			//printf("index = %d, flush_offset = %d\n", index, flush_offset);
 			bus_data = dsrams_array[bus_origid]->sram[index][flush_offset]; // flushing to bus
 		}
 	}
@@ -462,16 +457,18 @@ void bus_logic_before_snooping() {
 void bus_logic_after_snooping() {
 
 	if (bus_cmd == FLUSH) {
-		//printf("1\n");
+
 		if (flush_offset == 3) { // This means this was the last word in the block to flush
 			bus_cmd = NO_CMD;
 			flush_offset = 0;
-			if (bus_origid != 4) { // if it wasnt the main memory flushing
-				tsrams_array[bus_origid]->MESI[(bus_addr >> 2) & 0x3F] = SHARED; // now we share the block and everyone can enjoy it
-			}
+			//if (bus_origid != 4) { // if it wasnt the main memory flushing
+			//	tsrams_array[bus_origid]->MESI[(bus_addr >> 2) & 0x3F] = SHARED; // now we share the block and everyone can enjoy it
+			//}
 			if (modify_after_rdx) { // After BsRdx we want to write to the cache
-				dsrams_array[curr_request->core_index]->sram[curr_request->index][curr_request->offset] = curr_request->data;
-				tsrams_array[curr_request->core_index]->MESI[curr_request->index] = MODIFIED;
+				printf("curr_request->index = %d\n\n", curr_request->index);
+
+				dsrams_array[curr_request->core_index]->sram[(bus_addr >> 2) & 0x3F][curr_request->offset] = curr_request->data;
+				tsrams_array[curr_request->core_index]->MESI[(bus_addr >> 2) & 0x3F] = MODIFIED;
 				modify_after_rdx = 0;
 			}
 			if (rd_after_flush) {
@@ -483,7 +480,6 @@ void bus_logic_after_snooping() {
 				rd_after_flush = 0;
 			}
 			else if (rdx_after_flush) {
-				//printf("here!\n");
 				bus_cmd = BUSRDX;
 				tsrams_array[bus_origid]->tags[curr_request->index] = curr_request->tag; // put the new tag 
 				bus_addr = curr_request->addr;
@@ -493,7 +489,6 @@ void bus_logic_after_snooping() {
 				rdx_after_flush = 0;
 			}
 			else {
-				//printf("done\n");
 				curr_request->done = 1; // request fullfiled
 			}
 			
@@ -518,19 +513,42 @@ void check_if_req_fulfilled() {
 	if (curr_request->done) {
 		PR_REQ* pr_req = pr_requests[curr_request->core_index];
 		int core_ind = curr_request->core_index;
-		// printf("core_ind = \n", core_ind);
 		requests[core_ind] = NULL;
-		//printf("curr_request->core_index = %d\n", curr_request->core_index);
-		//printf("pr_req->type = %d\n", pr_req->type);
+
 		if (pr_req->type == PRRD) { // so core wants to read the updated data
 			pr_req->data = dsrams_array[core_ind]->sram[pr_req->index][pr_req->offset]; // giving the core the data from cache
 			if (tsrams_array[pr_req->core_index]->MESI[pr_req->index] == INVALID) tsrams_array[pr_req->core_index]->MESI[pr_req->index] = SHARED;
-			//printf("pr_req->data = %d, pr_req->index = %d, pr_req->index = %d, pr_req->offset = %d\n", pr_req->data, pr_req->index, pr_req->index, pr_req->offset);
 		}
 		pr_req->done = 1; // telling the core that it can continue (use the data)
 		pr_requests[core_ind] = NULL;
 		free(curr_request);
 	}
+}
+
+
+void bus_step() {
+	if (bus_cmd == NO_CMD) {
+		// code for setting a request and activating it
+		int core_to_serve = choose_core();
+		if (core_to_serve == -1) continue; // No transaction needed
+		curr_request = requests[core_to_serve];
+		core_used_bus(core_to_serve); // update the priority
+		requests[core_to_serve] = NULL;
+		core_has_request[core_to_serve] = 0;
+		place_request_on_bus();
+	}
+
+	bus_logic_before_snooping();
+
+
+	for (int i = 0; i < 4; i++) { // all the cores are snooping
+		core_i_snoop(i);
+	}
+	main_mem_snoop();
+
+	bus_logic_after_snooping();
+
+	check_if_req_fulfilled();
 }
 
 
@@ -564,7 +582,7 @@ void state_machine() {
 }
 
 
-
+// Main function for testing bus unit
 int main(int argc, char* argv[]) {
 	
 	//// *** Code for testing the round robin implimentation: ************************************************************************************************************
@@ -649,10 +667,34 @@ int main(int argc, char* argv[]) {
 	free(pr_req);
 	
 	// now cache 0 has in block 0 the first block of main memory (E state)
+	// lets try to read it (cache hit), should just bring the data without the bus
+	// ******* Code for testing core 0 reading address 1: *********************************************************************************************************
+
+	printf("now cache 0 has in block 0 the first block of main memory (E state)\n");
+	printf("lets try to read it (cache hit), should just bring the data without the bus\n");
+	printf("\ncore 0 reading address 1\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 1;
+	pr_req->core_index = 0;
+	pr_req->offset = 1;
+
+	PrRd(pr_req);
+
+	printf("data = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	//data = 2023, block 0 in cache 0- 0: 2021, 1: 2023, 2: 0, 3: 0
+	// printf("done = %d\n", pr_req->done);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block1 state = %d\n\n", tsrams_array[1]->MESI[0]);
+	free(pr_req);
+
+
+	// Still cache 0 has in block 0 the first block of main memory (E state)
 	// lets try to write to it with core 0 (should just change the value in the cache and the state to M)
 	// ******* Code for testing core 0 writing to address 1: *********************************************************************************************************
 	
-	printf("now cache 0 has in block 0 the first block of main memory (E state)\n");
+	printf("Still cache 0 has in block 0 the first block of main memory (E state)\n");
 	printf("lets try to write to it with core 0 (should just change the value in the cache and the state to M)\n");
 	printf("\ncore 0 writing 2023 to address 1\n\n");
 
@@ -665,7 +707,7 @@ int main(int argc, char* argv[]) {
 
 	PrWr(pr_req); // no need here for using the bus
 
-	printf("data = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, done = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, pr_req->done, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
 	//data = 2023, block 0 in cache 0- 0: 2021, 1: 2023, 2: 0, 3: 0
 	// printf("done = %d\n", pr_req->done);
 	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
@@ -673,10 +715,57 @@ int main(int argc, char* argv[]) {
 	free(pr_req);
 
 	// now cache 0 has in block 0 the first block of main memory (M state)
-	// lets try to read it with core 1 (cache 0 should flush its content and move to state S)
+	// lets try to read it with core 0 (should not involve the bus)
 	// ******* Code for testing core 1 reading address 1: *********************************************************************************************************
 
 	printf("now cache 0 has in block 0 the first block of main memory (M state)\n");
+	printf("lets try to read it with core 0 (should not involve the bus)\n");
+	printf("\ncore 0 reading address 1\n\n");
+	
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 1;
+	pr_req->core_index = 0;
+	pr_req->offset = 1;
+
+	PrRd(pr_req);
+
+	printf("data = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	//data = 2023, block 0 in cache 0- 0: 2021, 1: 2023, 2: 0, 3: 0
+	// printf("done = %d\n", pr_req->done);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block1 state = %d\n\n", tsrams_array[1]->MESI[0]);
+	free(pr_req);
+
+	// Still cache 0 has in block 0 the first block of main memory (M state)
+	// lets try to write ti it with core 0 (should not involve the bus)
+	// ******* Code for testing core 1 reading address 1: *********************************************************************************************************
+
+	printf("Still cache 0 has in block 0 the first block of main memory (M state)\n");
+	printf("lets try to read it with core 1 (cache 0 should flush its content and move to state S)\n");
+	printf("\ncore 1 reading address 1\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRWR;
+	pr_req->addr = 1;
+	pr_req->core_index = 0;
+	pr_req->data = 1984;
+	pr_req->offset = 1;
+
+	PrWr(pr_req); // no need here for using the bus
+
+	printf("data = %d, done = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, pr_req->done, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	//data = 2023, block 0 in cache 0- 0: 2021, 1: 2023, 2: 0, 3: 0
+	// printf("done = %d\n", pr_req->done);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block1 state = %d\n\n", tsrams_array[1]->MESI[0]);
+	free(pr_req);
+
+	// Still cache 0 has in block 0 the first block of main memory (M state)
+	// lets try to read it with core 1 (cache 0 should flush its content and move to state S)
+	// ******* Code for testing core 1 reading address 1: *********************************************************************************************************
+
+	printf("Still cache 0 has in block 0 the first block of main memory (M state)\n");
 	printf("lets try to read it with core 1 (cache 0 should flush its content and move to state S)\n");
 	printf("\ncore 1 reading address 1\n\n");
 
@@ -732,13 +821,36 @@ int main(int argc, char* argv[]) {
 
 
 	free(pr_req);
-
-
+	
 	// now cache 0 and 1 has in block 0 the first block of main memory (S state)
+	// lets try to read with core 0 address 1 (should not involve the bus and stay in S)
+	// ******* Code for testing core 0 reading address 1: *********************************************************************************************************
+
+	printf("now cache 0 and 1 has in block 0 the first block of main memory (S state)\n");
+	printf("lets try to read with core 0 address 1 (should not involve the bus)\n");
+	printf("\ncore 0 reading address 1\n\n");
+	
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 1;
+	pr_req->core_index = 0;
+	pr_req->offset = 1;
+
+	PrRd(pr_req);
+
+	printf("data = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	//data = 2023, block 0 in cache 0- 0: 2021, 1: 2023, 2: 0, 3: 0
+	// printf("done = %d\n", pr_req->done);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n\n", tsrams_array[1]->MESI[0]);
+	free(pr_req);
+
+
+	// Still cache 0 and 1 has in block 0 the first block of main memory (S state)
 	// lets try to write with core 1 to address 0 (should do rdx and move to state M and core 0 to state I)
 	// ******* Code for testing core 1 writing address 0: *********************************************************************************************************
 	
-	printf("now cache 0 and 1 has in block 0 the first block of main memory (S state)\n");
+	printf("Still cache 0 and 1 has in block 0 the first block of main memory (S state)\n");
 	printf("lets try to write with core 1 to address 0 (should do rdx and move to state M and core 0 to state I)\n");
 	printf("\ncore 1 writing 2020 to address 0\n\n");
 
@@ -796,7 +908,7 @@ int main(int argc, char* argv[]) {
 
 	// now cache 0 block 0 is invalid and cache 1 block 1 is modified
 	// lets try to write with core 1 to address 64 X 4, this address has index 0 but tag 1 (should flush the content and then do rdx and stay in state M)
-	// ******* Code for testing core 1 writing address 0: *********************************************************************************************************
+	// ******* Code for testing core 1 writing address 256: *********************************************************************************************************
 
 	printf("now cache 0 block 0 is invalid and cache 1 block 1 is modified\n");
 	printf("lets try to write with core 1 to address 64 X 4 = 256 (b100000000), \nthis address has index 0 but tag 1 (should flush the content and then do rdx and stay in state M)\n");
@@ -854,6 +966,386 @@ int main(int argc, char* argv[]) {
 	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
 	printf("main_memory[0] = %d, main_memory[1] = %d, main_memory[2] = %d, main_memory[3] = %d\n", main_memory[0], main_memory[1], main_memory[2], main_memory[3]);
 	printf("main_memory[256] = %d, main_memory[257] = %d, main_memory[258] = %d, main_memory[259] = %d\n\n", main_memory[256], main_memory[257], main_memory[258], main_memory[259]);
+	free(pr_req);
+
+	// lets try to write 1900 with core 0 to address 257, this should move it to state M and invalidate cache 1 
+	// ****************************************************************************************************************
+
+	printf("lets try to write 1900 with core 0 to address 257, this should move it to state M and invalidate cache 1\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRWR;
+	pr_req->addr = 257;
+	pr_req->core_index = 0;
+	pr_req->tag = 1;
+	pr_req->offset = 1;
+	pr_req->data = 1900;
+
+	PrWr(pr_req);
+
+	for (int j = 0; j < 30; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			//printf("j = %d\n", j);
+			int core_to_serve = choose_core();
+			//printf("core_to_serve = %d\n", core_to_serve);
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // no transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+
+		//printf("bus_shared = %d\n", bus_shared);
+
+		//printf("curr_request->core_index = %d\n", curr_request->core_index);
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	printf("data = %d, block 0 in cache 0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+	printf("main_memory[0] = %d, main_memory[1] = %d, main_memory[2] = %d, main_memory[3] = %d\n", main_memory[0], main_memory[1], main_memory[2], main_memory[3]);
+	printf("main_memory[256] = %d, main_memory[257] = %d, main_memory[258] = %d, main_memory[259] = %d\n\n", main_memory[256], main_memory[257], main_memory[258], main_memory[259]);
+	free(pr_req);
+
+	// lets try to read address 0 with core 1, should move to state E  
+	// ****************************************************************************************************************
+
+	printf("lets try to read address 0 with core 1, should move to state E\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 0;
+	pr_req->core_index = 1;
+
+	PrRd(pr_req);
+
+	// printf("Now the arrays are- core_has_request: {%d, %d, %d, %d}\n", core_has_request[0], core_has_request[1], core_has_request[2], core_has_request[3]);
+
+	for (int j = 0; j < 20; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			int core_to_serve = choose_core();
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // No transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("j = %d, cache0block0 state = %d\n",j ,tsrams_array[0]->MESI[0]);
+		//printf("bus_shared = %d\n", bus_shared);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	//printf("core_has_request[0]= %d\n", core_has_request[0]);
+	printf("data = %d, block 0 in cache0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n\n", tsrams_array[1]->MESI[0]);
+	//printf("cache1block1 state = %d\n", tsrams_array[2]->MESI[0]);
+	//printf("cache1block1 state = %d\n", tsrams_array[3]->MESI[0]);
+	free(pr_req);
+
+	// lets try to read address 0 with core 2, cache 1 and 2 should move to state S  
+	// ****************************************************************************************************************
+
+	printf("lets try to read address 0 with core 2, cache 1 and 2 should move to state S\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 0;
+	pr_req->core_index = 2;
+
+	PrRd(pr_req);
+
+	// printf("Now the arrays are- core_has_request: {%d, %d, %d, %d}\n", core_has_request[0], core_has_request[1], core_has_request[2], core_has_request[3]);
+
+	for (int j = 0; j < 20; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			int core_to_serve = choose_core();
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // No transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("j = %d, cache0block0 state = %d\n",j ,tsrams_array[0]->MESI[0]);
+		//printf("bus_shared = %d\n", bus_shared);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	//printf("core_has_request[0]= %d\n", core_has_request[0]);
+	printf("data = %d, block 0 in cache0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("data = %d, block 0 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[2]->sram[0][0], dsrams_array[2]->sram[0][1], dsrams_array[2]->sram[0][2], dsrams_array[2]->sram[0][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+	printf("cache2block0 state = %d\n\n", tsrams_array[2]->MESI[0]);
+	//printf("cache1block1 state = %d\n", tsrams_array[3]->MESI[0]);
+	free(pr_req);
+
+
+	main_memory[4] = 1234;
+	printf("main_memory[4] = %d\n\n", main_memory[4]);
+	// lets try to read address 4 with core 3, should move to state E (index is 1) 
+	// ****************************************************************************************************************
+
+	printf("lets try to read address 4 with core 3, should move to state E (index is 1)\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRRD;
+	pr_req->addr = 4;
+	pr_req->core_index = 3;
+	pr_req->index = 1;
+
+	PrRd(pr_req);
+
+	// printf("Now the arrays are- core_has_request: {%d, %d, %d, %d}\n", core_has_request[0], core_has_request[1], core_has_request[2], core_has_request[3]);
+
+	for (int j = 0; j < 20; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			int core_to_serve = choose_core();
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // No transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("j = %d, cache0block0 state = %d\n",j ,tsrams_array[0]->MESI[0]);
+		//printf("bus_shared = %d\n", bus_shared);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	//printf("core_has_request[0]= %d\n", core_has_request[0]);
+	printf("data = %d, block 0 in cache0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("data = %d, block 1 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[1][0], dsrams_array[1]->sram[1][1], dsrams_array[1]->sram[1][2], dsrams_array[1]->sram[1][3]);
+	printf("data = %d, block 0 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[2]->sram[0][0], dsrams_array[2]->sram[0][1], dsrams_array[2]->sram[0][2], dsrams_array[2]->sram[0][3]);
+	printf("data = %d, block 1 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[3]->sram[1][0], dsrams_array[3]->sram[1][1], dsrams_array[3]->sram[1][2], dsrams_array[3]->sram[1][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+	printf("cache1block1 state = %d\n", tsrams_array[1]->MESI[1]);
+	printf("cache2block0 state = %d\n", tsrams_array[2]->MESI[0]);
+	printf("cache3block1 state = %d\n\n", tsrams_array[3]->MESI[1]);
+	free(pr_req);
+
+	// now we want to write with core 1 to address 5 (index is 1), should move it to state M and cache3block1 to state I
+	// ****************************************************************************************************************
+
+	printf("now we want to write with core 1 to address 5 (index is 1), should move it to state M and cache3block1 to state I\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRWR;
+	pr_req->addr = 5;
+	pr_req->core_index = 1;
+	pr_req->index = 1;
+	pr_req->offset = 1;
+	pr_req->data = 4321;
+
+	PrWr(pr_req);
+
+	for (int j = 0; j < 30; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			//printf("j = %d\n", j);
+			int core_to_serve = choose_core();
+			//printf("core_to_serve = %d\n", core_to_serve);
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // no transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+
+		//printf("bus_shared = %d\n", bus_shared);
+
+		//printf("curr_request->core_index = %d\n", curr_request->core_index);
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	printf("data = %d, block 0 in cache0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("data = %d, block 1 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[1][0], dsrams_array[1]->sram[1][1], dsrams_array[1]->sram[1][2], dsrams_array[1]->sram[1][3]);
+	printf("data = %d, block 0 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[2]->sram[0][0], dsrams_array[2]->sram[0][1], dsrams_array[2]->sram[0][2], dsrams_array[2]->sram[0][3]);
+	printf("data = %d, block 1 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[3]->sram[1][0], dsrams_array[3]->sram[1][1], dsrams_array[3]->sram[1][2], dsrams_array[3]->sram[1][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+	printf("cache1block1 state = %d\n", tsrams_array[1]->MESI[1]);
+	printf("cache2block0 state = %d\n", tsrams_array[2]->MESI[0]);
+	printf("cache3block1 state = %d\n\n", tsrams_array[3]->MESI[1]);
+	printf("cache0block0 tag = %d\n", tsrams_array[0]->tags[0]);
+	printf("cache1block0 tag = %d\n", tsrams_array[1]->tags[0]);
+	printf("cache1block1 tag = %d\n", tsrams_array[1]->tags[1]);
+	printf("cache2block0 tag = %d\n", tsrams_array[2]->tags[0]);
+	printf("cache3block1 tag = %d\n\n", tsrams_array[3]->tags[1]);
+	printf("main_memory[0] = %d, main_memory[1] = %d, main_memory[2] = %d, main_memory[3] = %d\n", main_memory[0], main_memory[1], main_memory[2], main_memory[3]);
+	printf("main_memory[4] = %d, main_memory[5] = %d, main_memory[6] = %d, main_memory[7] = %d\n", main_memory[4], main_memory[5], main_memory[6], main_memory[7]);
+	printf("main_memory[256] = %d, main_memory[257] = %d, main_memory[258] = %d, main_memory[259] = %d\n\n", main_memory[256], main_memory[257], main_memory[258], main_memory[259]);
+	free(pr_req);
+
+	// now we want to write with core 0 to address 0 (index is 0, tag is 0), should make cache 0 flush and then do busRdx and stay at state M. cache1block0 and cache2block0 should move to state I
+	// ****************************************************************************************************************
+
+	printf("now we want to write with core 0 to address 0 (index is 0, tag is 0), should make cache 0 flush and then do busRdx and stay at state M. \ncache1block0 and cache2block0 should move to state I\n\n");
+
+	pr_req = calloc(1, sizeof(PR_REQ));
+	pr_req->type = PRWR;
+	pr_req->addr = 0;
+	pr_req->core_index = 0;
+	pr_req->index = 0;
+	pr_req->offset = 0;
+	pr_req->data = 2001;
+
+	PrWr(pr_req);
+
+	for (int j = 0; j < 30; j++) {
+		if (bus_cmd == NO_CMD) {
+			// code for setting a request and activating it
+			//printf("j = %d\n", j);
+			int core_to_serve = choose_core();
+			//printf("core_to_serve = %d\n", core_to_serve);
+			// printf("core_to_serve = %d\n", core_to_serve);
+			if (core_to_serve == -1) continue; // no transaction needed
+			curr_request = requests[core_to_serve];
+			//printf("core_to_serve = %d, curr_request->core_index = %d\n", core_to_serve, curr_request->core_index);
+			core_used_bus(core_to_serve); // update the priority
+			requests[core_to_serve] = NULL;
+			core_has_request[core_to_serve] = 0;
+			place_request_on_bus();
+		}
+
+		bus_logic_before_snooping();
+
+
+		for (int i = 0; i < 4; i++) { // all the cores are snooping
+			core_i_snoop(i);
+		}
+
+		main_mem_snoop();
+
+		bus_logic_after_snooping();
+
+		check_if_req_fulfilled();
+
+		//printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+
+		//printf("bus_shared = %d\n", bus_shared);
+
+		//printf("curr_request->core_index = %d\n", curr_request->core_index);
+		//printf("iteration = %d, bus_addr = %d, bus_data = %d, bus_origid = %d, bus_cmd = %d\n", j, bus_addr, bus_data, bus_origid, bus_cmd);
+		//printf("done = %d, count_down_to_first_word = %d, bus_addr = %d\n", pr_req->done, count_down_to_first_word, bus_addr);
+	}
+
+	printf("data = %d, block 0 in cache0- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[0]->sram[0][0], dsrams_array[0]->sram[0][1], dsrams_array[0]->sram[0][2], dsrams_array[0]->sram[0][3]);
+	printf("data = %d, block 0 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[0][0], dsrams_array[1]->sram[0][1], dsrams_array[1]->sram[0][2], dsrams_array[1]->sram[0][3]);
+	printf("data = %d, block 1 in cache 1- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[1]->sram[1][0], dsrams_array[1]->sram[1][1], dsrams_array[1]->sram[1][2], dsrams_array[1]->sram[1][3]);
+	printf("data = %d, block 0 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[2]->sram[0][0], dsrams_array[2]->sram[0][1], dsrams_array[2]->sram[0][2], dsrams_array[2]->sram[0][3]);
+	printf("data = %d, block 1 in cache 2- 0: %d, 1: %d, 2: %d, 3: %d\n", pr_req->data, dsrams_array[3]->sram[1][0], dsrams_array[3]->sram[1][1], dsrams_array[3]->sram[1][2], dsrams_array[3]->sram[1][3]);
+	printf("cache0block0 state = %d\n", tsrams_array[0]->MESI[0]);
+	printf("cache1block0 state = %d\n", tsrams_array[1]->MESI[0]);
+	printf("cache1block1 state = %d\n", tsrams_array[1]->MESI[1]);
+	printf("cache2block0 state = %d\n", tsrams_array[2]->MESI[0]);
+	printf("cache3block1 state = %d\n\n", tsrams_array[3]->MESI[1]);
+	printf("main_memory[0] = %d, main_memory[1] = %d, main_memory[2] = %d, main_memory[3] = %d\n", main_memory[0], main_memory[1], main_memory[2], main_memory[3]);
+	printf("main_memory[4] = %d, main_memory[5] = %d, main_memory[6] = %d, main_memory[7] = %d\n", main_memory[4], main_memory[5], main_memory[6], main_memory[7]);
+	printf("main_memory[256] = %d, main_memory[257] = %d, main_memory[258] = %d, main_memory[259] = %d\n\n", main_memory[256], main_memory[257], main_memory[258], main_memory[259]);
+
+
+
+	
 
 	free_caches();
 	free(pr_req);
