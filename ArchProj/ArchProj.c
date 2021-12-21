@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ArchProj.h"
+#include "bus.h"
 
 /*#define SHOW_CMD_BREAKDOWN      0
 #define SHOW_CONTROL_SIGNALS    0
@@ -33,9 +34,12 @@ ID_EX* idex[4];
 EX_MEM* exmem[4];
 MEM_WB* memwb[4];
 
+PR_REQ* pr_req;
+
 int branch_taken[4] = { 0 };   // PCSrc
 
 int hazard[4] = { 0 };
+int cachestall[4] = { 0 };
 
 void init() {
     int i;
@@ -192,6 +196,23 @@ void execute(int id) {
         break;
 
     case LW:
+        // create requst
+        if (!cachestall[id]) {
+            pr_req = calloc(1, sizeof(PR_REQ));
+            pr_req->type = PRRD;
+            pr_req->addr = exmem[id]->rd;
+            pr_req->core_index = id;
+            PrRd(pr_req);
+        }
+
+        
+        if (pr_req->done) {
+            cachestall[id] = 0;
+            R[id][pr_req->addr] = pr_req->data;
+        }
+        else {
+            cachestall[id] = 1;
+        }
         break;
     case SW:
         break;
@@ -288,6 +309,9 @@ int main(int argc, char* argv[]) {
     int halt_prop[4] = { 0 };
 
     while (start || halt_prop[0] < 3 || halt_prop[1] < 3 || halt_prop[2] < 3 || halt_prop[3] < 3) {
+
+        //before();
+
         start = 0;
         for (id = 0; id < 4; id++) {
             if (halt_prop[id] == 3) // core stopped
@@ -381,6 +405,8 @@ int main(int argc, char* argv[]) {
             }
 
         }
+
+        bus_step();
 
     }
 

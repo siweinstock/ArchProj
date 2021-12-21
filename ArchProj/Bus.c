@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "bus.h"
 
 /* Each cache has 256 words (lines of 32 bits), and a block is 4 words so offset is 2 bits.
  * There are 64 blocks in a cache so we need 6 bits for index.
@@ -8,22 +9,7 @@
  * We have 2^20 words in main memory so 2^18 blocks
  */
 
-#define BLOCKS_IN_CACHE      64
-#define WORDS_IN_BLOCK	     4
-#define MAIN_MEM_SIZE        1048576
-#define BLOCKS_IN_MAIN_MEM   262144
-#define NO_CMD               0
-#define BUSRD                1
-#define BUSRDX               2
-#define FLUSH                3
-#define FLUSH_BUSRD          4
-#define FLUSH_BUSRDX         5
-#define PRRD                 0
-#define PRWR                 1
-#define INVALID              0
-#define SHARED               1
-#define EXCLUSIVE            2
-#define MODIFIED             3
+
 
 
 
@@ -32,45 +18,6 @@ int main_memory[MAIN_MEM_SIZE];
 int main_mem_timer = 0;
 int main_mem_is_wating = 0;
 
-
-typedef struct DSRAM {
-	int core_index;
-	// CORE* core;
-	int sram[BLOCKS_IN_CACHE][WORDS_IN_BLOCK];
-
-} DSRAM;
-
-
-typedef struct TSRAM {
-	int core_index;
-	// CORE* core;
-	int tags[BLOCKS_IN_CACHE];
-	int MESI[BLOCKS_IN_CACHE];
-} TSRAM;
-
-typedef struct BUS_REQ {
-	int core_index;
-	// CORE* core;
-	int type; // 1 for BusRd, 2 for BusRdX, 3 for Flush, 4 for Flush+BusRd, 5 for Flush+BusRdX
-	int addr;
-	int data;
-	int offset;
-	int index;
-	int tag;
-	int done;
-} BUS_REQ;
-
-typedef struct PR_REQ {
-	int core_index;
-	// CORE* core;
-	int type; // 0 for PrRd, 1 for PrWr
-	int addr;
-	int data;
-	int offset;
-	int index;
-	int tag;
-	int done;
-} PR_REQ;
 
 
 DSRAM* dsrams_array[4];
@@ -152,13 +99,6 @@ int choose_core() {
 }
 //*************************************************************************************************************************
 
-void BusRd(PR_REQ* request) {
-
-}
-
-void BusRdX() {
-
-}
 
 
 // This is a function that a core can call in order to request reading data from the cache. 
@@ -530,7 +470,7 @@ void bus_step() {
 	if (bus_cmd == NO_CMD) {
 		// code for setting a request and activating it
 		int core_to_serve = choose_core();
-		if (core_to_serve == -1) continue; // No transaction needed
+		if (core_to_serve == -1) return; // No transaction needed
 		curr_request = requests[core_to_serve];
 		core_used_bus(core_to_serve); // update the priority
 		requests[core_to_serve] = NULL;
@@ -583,7 +523,7 @@ void state_machine() {
 
 
 // Main function for testing bus unit
-int main(int argc, char* argv[]) {
+int main222(int argc, char* argv[]) {
 	
 	//// *** Code for testing the round robin implimentation: ************************************************************************************************************
 	//printf("Initialy the arrays are- priorities: {%d, %d, %d, %d} , core_has_request: {%d, %d, %d, %d}\n", priorities[0], priorities[1], priorities[2], priorities[3],

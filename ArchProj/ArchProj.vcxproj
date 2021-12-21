@@ -139,7 +139,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ArchProj.c" />
     <ClCompile Include="Bus.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ArchProj.h" />
+    <ClInclude Include="bus.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

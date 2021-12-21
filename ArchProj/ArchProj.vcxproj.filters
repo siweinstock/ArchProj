@@ -18,5 +18,16 @@
     <ClCompile Include="Bus.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ArchProj.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ArchProj.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bus.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
