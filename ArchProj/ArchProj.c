@@ -34,12 +34,12 @@ ID_EX* idex[4];
 EX_MEM* exmem[4];
 MEM_WB* memwb[4];
 
-PR_REQ* pr_req;
+PR_REQ* pr_req[4];
 
 int branch_taken[4] = { 0 };   // PCSrc
 
 int hazard[4] = { 0 };
-int cachestall[4] = { 0 };
+
 
 void init() {
     int i;
@@ -196,25 +196,22 @@ void execute(int id) {
         break;
 
     case LW:
+        exmem[id]->MemRead = 1;
         // create requst
-        if (!cachestall[id]) {
-            pr_req = calloc(1, sizeof(PR_REQ));
-            pr_req->type = PRRD;
-            pr_req->addr = exmem[id]->rd;
-            pr_req->core_index = id;
-            PrRd(pr_req);
-        }
-
-        
-        if (pr_req->done) {
-            cachestall[id] = 0;
-            R[id][pr_req->addr] = pr_req->data;
-        }
-        else {
-            cachestall[id] = 1;
-        }
+        pr_req[id] = calloc(1, sizeof(PR_REQ));
+        pr_req[id]->type = PRRD;
+        pr_req[id]->addr = exmem[id]->rd;
+        pr_req[id]->core_index = id;
+        //PrRd(pr_req[id]);
         break;
     case SW:
+        exmem[id]->MemWrite = 1;
+        // create requst
+        pr_req[id] = calloc(1, sizeof(PR_REQ));
+        pr_req[id]->type = PRWR;
+        pr_req[id]->addr = exmem[id]->rd;
+        pr_req[id]->core_index = id;
+        //PrWr(pr_req[id]);
         break;
     case HALT:
         exmem[id]->valid = 0;
@@ -236,12 +233,39 @@ void memory(int id) {
     memwb[id]->result = exmem[id]->result;
     memwb[id]->RegWrite = exmem[id]->RegWrite;
 
+    // load
     if (exmem[id]->MemRead) {
-        //memwb->ReadData = exmem->result;
-        printf("RD=MEM[%X]\n", exmem[id]->result);
+        PrRd(pr_req[id]);
+        if (!pr_req[id]->done) {
+            printf("cache stall %d\n", id);
+            
+        }
+        else {
+            printf("%d\n", choose_core());
+            if (choose_core() == id)
+                cachestall[id] = 1;
+
+            //cachestall[id] = 0;
+
+            R[id][pr_req[id]->addr] = pr_req[id]->data;
+            //printf("RD[%d]=MEM[%X]\n", id, exmem[id]->result);
+        }
+
     }
+    // store
     else if (exmem[id]->MemWrite) {
-        printf("MEM[%X]=RD\n", exmem[id]->result);
+        PrWr(pr_req[id]);
+        if (!pr_req[id]->done) {
+            printf("cache stall %d\n", id);
+            cachestall[id] = 1;
+        }
+        else {
+            R[id][pr_req[id]->addr] = pr_req[id]->data;
+            //printf("MEM[%X]=RD[%d]\n", id, exmem[id]->result);
+
+            if (requests[id] == NULL)
+                cachestall[id] = 0;
+        }
     }
 
 }
@@ -277,7 +301,6 @@ int hazard_detector(int id) {
 
     if (idex[id]->valid && memwb[id]->valid) {
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd != 0) {
-            //printf("HAZARD 2a {%d %d}\n", memwb->pc, idex->pc);
             return 2;
         }
         if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd != 0) {
@@ -295,55 +318,61 @@ int main(int argc, char* argv[]) {
     char* nout[4] = { "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt" };
     int halt = 0;
     int id;
-    //imem_size = load_instruction_memory(f, imem_img, 8);
+
     for (id = 0; id < 4; id++) {
         f[id] = fopen(argv[id + 1], "r");
         fout[id] = fopen(nout[id], "w");
         imem_size[id] = load_instruction_memory(f[id], imem_img[id], 8);
     }
-    init();
 
+    init();
+    init_caches();
 
     int start = 1;
     int halting[4] = { 0 };
     int halt_prop[4] = { 0 };
 
     while (start || halt_prop[0] < 3 || halt_prop[1] < 3 || halt_prop[2] < 3 || halt_prop[3] < 3) {
-
-        //before();
-
         start = 0;
         for (id = 0; id < 4; id++) {
             if (halt_prop[id] == 3) // core stopped
                 continue;
             if (halting[id])
                 halt_prop[id]++;
-
+            
             writeback(id);
-            state[id]->W = state[id]->M;
-            memory(id);
-            state[id]->M = state[id]->E;
+            if (!cachestall[id]) {
+                state[id]->W = state[id]->M;
+                memory(id);
+                state[id]->M = state[id]->E;
+                if (!hazard[id]) {
+                    execute(id);
+                    state[id]->E = state[id]->D;
+                    decode(id);
+                    state[id]->D = state[id]->F;
+                    fetch(id);
+                    state[id]->F = halting[id] ? -1 : ifid[id]->pc;
+                }
+                // if hazard detected stall
+                else {
+                    state[id]->E = -2;
+                }
 
-            if (!hazard[id]) {
-                execute(id);
-                state[id]->E = state[id]->D;
-                decode(id);
-                state[id]->D = state[id]->F;
-                fetch(id);
-                state[id]->F = halting[id] ? -1 : ifid[id]->pc;
+                if (!hazard[id])
+                    hazard[id] = hazard_detector(id);
+                else {
+                    hazard[id]--;
+                    if (hazard[0] == 0)
+                        printf("HAZ RES\n");
+                }
             }
-            // if hazard detected stall
             else {
-                state[id]->E = -2;
+                state[id]->W = -1;
             }
 
-            if (!hazard[id])
-                hazard[id] = hazard_detector(id);
-            else
-                hazard[id]--;
 
-            if (SHOW_DUMP) {
-                fprintf(fout[id], "%3d: ", count[id]);
+            if (SHOW_DUMP && id==0) {
+                fprintf(stdout, "{%d}  %3d: ", cachestall[id], count[id]);
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];
@@ -386,12 +415,12 @@ int main(int argc, char* argv[]) {
                 }
 
 
-                fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
+                fprintf(stdout, "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
 
                 for (int j = 2; j < 15; j++) {
-                    fprintf(fout[id], "%3X, ", R[id][j]);
+                    fprintf(stdout, "%3X, ", R[id][j]);
                 }
-                fprintf(fout[id], "\n");
+                fprintf(stdout, "\n");
 
             }
             count[id]++;
@@ -407,6 +436,8 @@ int main(int argc, char* argv[]) {
         }
 
         bus_step();
+        //printf("-\n");
+        getchar();
 
     }
 

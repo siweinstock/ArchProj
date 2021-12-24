@@ -56,7 +56,10 @@ typedef struct PR_REQ {
 	int done;
 } PR_REQ;
 
+BUS_REQ* requests[4];
+int cachestall[4];
 
-
+void init_caches();
+int choose_core();
 void bus_step();
 void PrRd(PR_REQ* request);

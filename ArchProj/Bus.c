@@ -27,14 +27,17 @@ TSRAM* tsrams_array[4];
 
 int priorities[4] = { 0, 1, 2, 3 };
 int core_has_request[4] = { 0, 0, 0, 0 };
-BUS_REQ* requests[4];
+
 PR_REQ* pr_requests[4];
 BUS_REQ* curr_request;
 
 char bus_origid, bus_cmd, flush_offset, modify_after_rdx,
-bus_shared, count_down_to_first_word, request_done, words_to_transfer, memory_rd, rd_after_flush, rdx_after_flush, flush_next;
+bus_shared, request_done, words_to_transfer, memory_rd, rd_after_flush, rdx_after_flush, flush_next;
 
+int count_down_to_first_word;
 int bus_addr, bus_data;
+
+cachestall[4] = { 0 };
 
 
 void init_caches() {
@@ -106,9 +109,11 @@ int choose_core() {
 void PrRd(PR_REQ* request) {
 	int core_index = request->core_index;
 	int addr = request->addr;
-	int index = request->index;
-	int tag = request->tag;
-	int offset = request->offset;
+	int offset = addr & 0x3;
+	int index = (addr >> 2) & 0x3F;
+	int tag = (addr >> 8) & 0xFFF;
+
+
 
 	TSRAM* tsram = tsrams_array[core_index];
 	DSRAM* dsram = dsrams_array[core_index];
@@ -122,7 +127,7 @@ void PrRd(PR_REQ* request) {
 			return;
 		}
 		else { // The block is invalid (state I)
-			// Setting a bus request for reading			
+			// Setting a bus request for reading	
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
@@ -405,7 +410,7 @@ void bus_logic_after_snooping() {
 			//	tsrams_array[bus_origid]->MESI[(bus_addr >> 2) & 0x3F] = SHARED; // now we share the block and everyone can enjoy it
 			//}
 			if (modify_after_rdx) { // After BsRdx we want to write to the cache
-				printf("curr_request->index = %d\n\n", curr_request->index);
+				//printf("curr_request->index = %d\n\n", curr_request->index);
 
 				dsrams_array[curr_request->core_index]->sram[(bus_addr >> 2) & 0x3F][curr_request->offset] = curr_request->data;
 				tsrams_array[curr_request->core_index]->MESI[(bus_addr >> 2) & 0x3F] = MODIFIED;
@@ -430,6 +435,7 @@ void bus_logic_after_snooping() {
 			}
 			else {
 				curr_request->done = 1; // request fullfiled
+				cachestall[curr_request->core_index] = 0;
 			}
 			
 		}
@@ -471,11 +477,13 @@ void bus_step() {
 		// code for setting a request and activating it
 		int core_to_serve = choose_core();
 		if (core_to_serve == -1) return; // No transaction needed
+		cachestall[core_to_serve] = 1;
 		curr_request = requests[core_to_serve];
 		core_used_bus(core_to_serve); // update the priority
-		requests[core_to_serve] = NULL;
+		//requests[core_to_serve] = NULL;
 		core_has_request[core_to_serve] = 0;
 		place_request_on_bus();
+		requests[core_to_serve] = NULL;
 	}
 
 	bus_logic_before_snooping();
