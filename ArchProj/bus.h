@@ -2,7 +2,7 @@
 
 #define BLOCKS_IN_CACHE      64
 #define WORDS_IN_BLOCK	     4
-#define MAIN_MEM_SIZE        1048576
+#define MAIN_MEM_SIZE        64
 #define BLOCKS_IN_MAIN_MEM   262144
 #define NO_CMD               0
 #define BUSRD                1
@@ -56,6 +56,7 @@ typedef struct PR_REQ {
 	int done;
 } PR_REQ;
 
+int main_memory[MAIN_MEM_SIZE];
 BUS_REQ* requests[4];
 int cachestall[4];
 

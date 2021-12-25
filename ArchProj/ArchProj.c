@@ -75,6 +75,23 @@ int load_instruction_memory(FILE* memfile, int img[], int mode) {
     return i;
 }
 
+// load memory image from file to memory
+int load_main_memory(FILE* memfile, int img[]) {
+    char line[MAIN_MEM_SIZE];
+    int i = 0;
+    int n;
+
+    while (fgets(line, 10, memfile)) {
+        n = strtol(line, NULL, 16);
+        //printf("%d: %s -> %x\n", i, line, n);
+        img[i] = n;
+        printf("mem[%d]=%x\n", i, n);
+        i++;
+    }
+
+    return i;
+}
+
 void fetch(int id) {
     if (branch_taken[id]) {
         ifid[id]->pc = idex[id]->addr;
@@ -200,7 +217,7 @@ void execute(int id) {
         // create requst
         pr_req[id] = calloc(1, sizeof(PR_REQ));
         pr_req[id]->type = PRRD;
-        pr_req[id]->addr = exmem[id]->rd;
+        pr_req[id]->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         pr_req[id]->core_index = id;
         //PrRd(pr_req[id]);
         break;
@@ -209,7 +226,7 @@ void execute(int id) {
         // create requst
         pr_req[id] = calloc(1, sizeof(PR_REQ));
         pr_req[id]->type = PRWR;
-        pr_req[id]->addr = exmem[id]->rd;
+        pr_req[id]->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         pr_req[id]->core_index = id;
         //PrWr(pr_req[id]);
         break;
@@ -218,7 +235,6 @@ void execute(int id) {
         break;
     }
 }
-
 
 void memory(int id) {
     memwb[id]->valid = exmem[id]->valid;
@@ -238,17 +254,18 @@ void memory(int id) {
         PrRd(pr_req[id]);
         if (!pr_req[id]->done) {
             printf("cache stall %d\n", id);
+            R[id][pr_req[id]->addr] = pr_req[id]->data;
+            printf("RD[%d][%d]=%X\n", id, pr_req[id]->addr, pr_req[id]->data);
             
         }
         else {
             printf("%d\n", choose_core());
+            //if (choose_core() == id)
             if (choose_core() == id)
                 cachestall[id] = 1;
 
-            //cachestall[id] = 0;
-
             R[id][pr_req[id]->addr] = pr_req[id]->data;
-            //printf("RD[%d]=MEM[%X]\n", id, exmem[id]->result);
+            printf("RD[%d]=%X\n", id, pr_req[id]->data);
         }
 
     }
@@ -270,7 +287,6 @@ void memory(int id) {
 
 }
 
-
 void writeback(int id) {
     memcpy(R[id], tmp[id], 16 * sizeof(int));
     if (memwb[id]->RegWrite) {
@@ -285,26 +301,33 @@ void writeback(int id) {
 
 }
 
-
 int hazard_detector(int id) {
 
+    if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
+        return 3;
+    }
+
     if (idex[id]->valid && exmem[id]->valid) {
+        if (id == 0)
+            //printf("haz1check: %d %d %d\n", exmem[id]->rd, idex[id]->rs, idex[id]->rt);
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd != 0) {
-            printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+            //printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
         if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd != 0) {
-            printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+           //printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
     }
 
     if (idex[id]->valid && memwb[id]->valid) {
+        if (id==0)
+            //printf("haz2check: %d %d %d\n", memwb[id]->rd, idex[id]->rs, idex[id]->rt);
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd != 0) {
             return 2;
         }
         if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd != 0) {
-            printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
+            //printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
     }
@@ -313,7 +336,7 @@ int hazard_detector(int id) {
 
 
 int main(int argc, char* argv[]) {
-    FILE* f[4]; // = fopen(argv[1], "r");
+    FILE* f[5]; // = fopen(argv[1], "r");
     FILE* fout[4];
     char* nout[4] = { "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt" };
     int halt = 0;
@@ -327,6 +350,8 @@ int main(int argc, char* argv[]) {
 
     init();
     init_caches();
+    f[5] = fopen(argv[5], "r");
+    load_main_memory(f[5], main_memory);
 
     int start = 1;
     int halting[4] = { 0 };
@@ -358,12 +383,11 @@ int main(int argc, char* argv[]) {
                     state[id]->E = -2;
                 }
 
-                if (!hazard[id])
+                if (!hazard[id]) {
                     hazard[id] = hazard_detector(id);
+                }
                 else {
                     hazard[id]--;
-                    if (hazard[0] == 0)
-                        printf("HAZ RES\n");
                 }
             }
             else {
@@ -372,7 +396,7 @@ int main(int argc, char* argv[]) {
 
 
             if (SHOW_DUMP && id==0) {
-                fprintf(stdout, "{%d}  %3d: ", cachestall[id], count[id]);
+                fprintf(stdout, "%3d: ", count[id]);
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];
