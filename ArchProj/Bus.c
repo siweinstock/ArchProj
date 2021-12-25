@@ -484,8 +484,8 @@ void bus_step() {
 		if (core_to_serve == -1) return; // No transaction needed
 		cachestall[core_to_serve] = 1;
 
-		//curr_request = requests[core_to_serve];
-		memcpy(curr_request, requests[core_to_serve], sizeof(BUS_REQ*));
+		curr_request = requests[core_to_serve];
+		//memcpy(curr_request, requests[core_to_serve], sizeof(BUS_REQ*));
 		core_used_bus(core_to_serve); // update the priority
 		//requests[core_to_serve] = NULL;
 		core_has_request[core_to_serve] = 0;
