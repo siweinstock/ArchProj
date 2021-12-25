@@ -113,7 +113,6 @@ void PrRd(PR_REQ* request) {
 	int offset = addr & 0x3;
 	int index = (addr >> 2) & 0x3F;
 	int tag = (addr >> 8) & 0xFFF;
-	printf("index = %d\n", index);
 
 
 	TSRAM* tsram = tsrams_array[core_index];
@@ -176,6 +175,10 @@ void PrRd(PR_REQ* request) {
 // This is a function that a core can call in order to request writing data to the cache/memory. 
 // when the request is served the field done will be 1
 void PrWr(PR_REQ* request) {
+
+	if (request == NULL) {
+		return;
+	}
 	
 	int core_index = request->core_index;
 	int addr = request->addr;
@@ -327,7 +330,7 @@ void core_i_snoop(int i) {
 	}
 	else if (bus_cmd == FLUSH) { // Flush - some other core is flushing
 		dsrams_array[i]->sram[index][offset] = bus_data; // we copy the flushed data because it is the most updated
-		printf("flush dsrams_array[%d]=[%d][%d]=%x\n", i, index, offset, bus_data);
+		//printf("flush dsrams_array[%d]=[%d][%d]=%x\n", i, index, offset, bus_data);
 		//tsram->MESI[index] = SHARED;
 	}
 }
@@ -473,7 +476,7 @@ void check_if_req_fulfilled() {
 		if (pr_req->type == PRRD) { // so core wants to read the updated data
 			pr_req->data = dsrams_array[core_ind]->sram[curr_request->index][curr_request->offset]; // giving the core the data from cache
 			//pr_req->data = dsrams_array[core_ind]->sram[3][3]; // giving the core the data from cache
-			printf("DATA: dsrams_array[%d]->sram[%d][%d]=%x\n", core_ind, curr_request->index, curr_request->offset, pr_req->data);
+			//printf("DATA: dsrams_array[%d]->sram[%d][%d]=%x\n", core_ind, curr_request->index, curr_request->offset, pr_req->data);
 
 			if (tsrams_array[pr_req->core_index]->MESI[pr_req->index] == INVALID) tsrams_array[pr_req->core_index]->MESI[pr_req->index] = SHARED;
 		}
@@ -485,10 +488,13 @@ void check_if_req_fulfilled() {
 
 
 void bus_step() {
+	int core_to_serve;
 	if (bus_cmd == NO_CMD) {
 		// code for setting a request and activating it
-		int core_to_serve = choose_core();
+		core_to_serve = choose_core();
+
 		if (core_to_serve == -1) return; // No transaction needed
+		
 		cachestall[core_to_serve] = 1;
 
 		curr_request = requests[core_to_serve];

@@ -34,7 +34,7 @@ ID_EX* idex[4];
 EX_MEM* exmem[4];
 MEM_WB* memwb[4];
 
-PR_REQ* pr_req[4];
+//PR_REQ* pr_req[4];
 
 int branch_taken[4] = { 0 };   // PCSrc
 
@@ -141,6 +141,8 @@ void execute(int id) {
     exmem[id]->rs = idex[id]->rs;
     exmem[id]->rt = idex[id]->rt;
 
+    exmem[id]->pr_req = NULL;
+
     switch (idex[id]->ALUOp) {
     case ADD:
         exmem[id]->result = exmem[id]->ReadData1 + exmem[id]->ReadData2;
@@ -214,20 +216,23 @@ void execute(int id) {
 
     case LW:
         exmem[id]->MemRead = 1;
+
         // create requst
-        pr_req[id] = calloc(1, sizeof(PR_REQ));
-        pr_req[id]->type = PRRD;
-        pr_req[id]->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
-        pr_req[id]->core_index = id;
+        exmem[id]->pr_req = calloc(1, sizeof(PR_REQ));
+        exmem[id]->pr_req->type = PRRD;
+        exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
+        exmem[id]->pr_req->core_index = id;
+
         //PrRd(pr_req[id]);
         break;
     case SW:
         exmem[id]->MemWrite = 1;
         // create requst
-        pr_req[id] = calloc(1, sizeof(PR_REQ));
-        pr_req[id]->type = PRWR;
-        pr_req[id]->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
-        pr_req[id]->core_index = id;
+        exmem[id]->pr_req = calloc(1, sizeof(PR_REQ));
+        exmem[id]->pr_req->type = PRWR;
+        exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
+        exmem[id]->pr_req->core_index = id;
+        exmem[id]->pr_req->data = R[id][exmem[id]->rd];
         //PrWr(pr_req[id]);
         break;
     case HALT:
@@ -249,39 +254,37 @@ void memory(int id) {
     memwb[id]->result = exmem[id]->result;
     memwb[id]->RegWrite = exmem[id]->RegWrite;
 
+    memwb[id]->pr_req = exmem[id]->pr_req;
+
     // load
-    if (exmem[id]->MemRead) {
+    //if (exmem[id]->MemRead) {
+    if (exmem[id]->opcode == LW || exmem[id]->opcode == SW) {
        
-        PrRd(pr_req[id]);
-        if (!pr_req[id]->done) {
-            printf("cache stall %d\n", id);
-            //R[id][pr_req[id]->addr] = pr_req[id]->data;
-            //printf("RD[%d][%d]=%X\n", id, pr_req[id]->addr, pr_req[id]->data);
-            
+        PrRd(memwb[id]->pr_req);
+        if (!memwb[id]->pr_req->done) {
         }
         else {
-            printf("%d\n", choose_core());
-            //if (choose_core() == id)
-            if (choose_core() == id)
+            if (choose_core() == id) {
+                printf("cachestall = 1\n");
                 cachestall[id] = 1;
-            printf("Helo!!!\n");
-            memwb[id]->result = pr_req[id]->data;
-            //R[id][pr_req[id]->addr] = pr_req[id]->data;
-            printf("RD[%d]=%X\n", id, pr_req[id]->data);
+            }
+
+            memwb[id]->result = memwb[id]->pr_req->data;
+            //printf("memwb->res=%x\n", memwb[id]->pr_req->data);
+            //printf("RD[%d]=%X\n", id, memwb[id]->pr_req->data);
         }
-        
+
 
     }
     // store
-    else if (exmem[id]->MemWrite) {
-        PrWr(pr_req[id]);
-        if (!pr_req[id]->done) {
-            printf("cache stall %d\n", id);
+    else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
+        PrWr(memwb[id]->pr_req);
+        if (!memwb[id]->pr_req->done) {
+            printf("cachestall = 1\n");
             cachestall[id] = 1;
         }
         else {
-            R[id][pr_req[id]->addr] = pr_req[id]->data;
-            //printf("MEM[%X]=RD[%d]\n", id, exmem[id]->result);
+            R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
 
             if (requests[id] == NULL)
                 cachestall[id] = 0;
@@ -290,18 +293,16 @@ void memory(int id) {
     
 }
 
-void writeback(int id) {
-    if (pr_req[id] != NULL) {
-        if (pr_req[id]->done) {
-            memwb[id]->result = pr_req[id]->data;
-        }
+int writeback(int id) {
+    if (memwb[id]->pr_req != NULL && memwb[id]->opcode == LW) { //&& !cachestall[id]) {
+        memwb[id]->result = memwb[id]->pr_req->data;
+        //printf("memwb res from prreq\n");
+        //free(memwb[id]->pr_req);
     }
-    
 
     memcpy(R[id], tmp[id], 16 * sizeof(int));
     if (memwb[id]->RegWrite) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
-        //printf("WB %d\n", state->W);
 
         // make sure updated values are read
         idex[id]->ReadData1 = (idex[id]->rs == 1 ? idex[id]->imm : R[id][idex[id]->rs]);
@@ -309,23 +310,25 @@ void writeback(int id) {
     }
 
 
+
 }
 
 int hazard_detector(int id) {
 
     if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
+        printf("WAW hazard\n");
         return 3;
     }
 
     if (idex[id]->valid && exmem[id]->valid) {
         if (id == 0)
             //printf("haz1check: %d %d %d\n", exmem[id]->rd, idex[id]->rs, idex[id]->rt);
-        if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd != 0) {
-            //printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+        if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
+            printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
-        if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd != 0) {
-           //printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+        if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd > 1) {
+           printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
     }
@@ -333,11 +336,12 @@ int hazard_detector(int id) {
     if (idex[id]->valid && memwb[id]->valid) {
         if (id==0)
             //printf("haz2check: %d %d %d\n", memwb[id]->rd, idex[id]->rs, idex[id]->rt);
-        if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd != 0) {
+        if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
+            printf("HAZARD 2a {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
-        if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd != 0) {
-            //printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
+        if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd > 1) {
+            printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
     }
@@ -350,7 +354,7 @@ int main(int argc, char* argv[]) {
     FILE* fout[4];
     char* nout[4] = { "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt" };
     int halt = 0;
-    int id;
+    int id, core;
 
     for (id = 0; id < 4; id++) {
         f[id] = fopen(argv[id + 1], "r");
@@ -375,8 +379,7 @@ int main(int argc, char* argv[]) {
                 continue;
             if (halting[id])
                 halt_prop[id]++;
-            
-            writeback(id);
+            core = writeback(id);
 
             if (!cachestall[id]) {
                 state[id]->W = state[id]->M;
@@ -408,7 +411,7 @@ int main(int argc, char* argv[]) {
 
 
             if (SHOW_DUMP && id==0) {
-                fprintf(stdout, "%3d: ", count[id]);
+                fprintf(stdout, "{%d} %3d: ", cachestall[id], count[id]);
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];

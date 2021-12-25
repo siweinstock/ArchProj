@@ -7,6 +7,7 @@
 #define CORE0_CORE0_H
 
 #include <stdint.h>
+#include "bus.h"
 
 #define ADD		0
 #define SUB		1
@@ -78,6 +79,8 @@ typedef struct EX_MEM {
     int ReadData1;
     int ReadData2;
 
+    PR_REQ* pr_req;
+
 
     // control signals
     int RegWrite;
@@ -99,6 +102,8 @@ typedef struct MEM_WB {
     int rd;
     int opcode;
     int result;
+
+    PR_REQ* pr_req;
 
     int ReadData;
     int RegWrite;
