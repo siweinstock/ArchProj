@@ -233,6 +233,7 @@ void execute(int id) {
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
         exmem[id]->pr_req->data = R[id][exmem[id]->rd];
+        printf("store data %x @ address %d\n", R[id][exmem[id]->rd], exmem[id]->pr_req->addr);
         //PrWr(pr_req[id]);
         break;
     case HALT:
@@ -270,25 +271,19 @@ void memory(int id) {
             }
 
             memwb[id]->result = memwb[id]->pr_req->data;
-            //printf("memwb->res=%x\n", memwb[id]->pr_req->data);
-            //printf("RD[%d]=%X\n", id, memwb[id]->pr_req->data);
         }
 
 
     }
     // store
-    else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
+    //else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
+    if (exmem[id]->opcode == SW) {
         PrWr(memwb[id]->pr_req);
-        if (!memwb[id]->pr_req->done) {
-            printf("cachestall = 1\n");
-            cachestall[id] = 1;
-        }
-        else {
-            R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
+        printf("PO put done %d, data %x\n", memwb[id]->pr_req->done, memwb[id]->pr_req->data);
+        R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
 
-            if (requests[id] == NULL)
-                cachestall[id] = 0;
-        }
+        if (requests[id] == NULL)
+            cachestall[id] = 0;
     }
     
 }
