@@ -113,7 +113,7 @@ void PrRd(PR_REQ* request) {
 	int offset = addr & 0x3;
 	int index = (addr >> 2) & 0x3F;
 	int tag = (addr >> 8) & 0xFFF;
-
+	printf("index = %d\n", index);
 
 
 	TSRAM* tsram = tsrams_array[core_index];
@@ -134,6 +134,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
 			requests[core_index]->addr = addr;
+			requests[core_index]->index = index;
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
@@ -149,6 +150,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
 			requests[core_index]->addr = addr;
+			requests[core_index]->index = index;
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
@@ -161,6 +163,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
 			requests[core_index]->addr = addr;
+			requests[core_index]->index = index;
 			requests[core_index]->type = FLUSH_BUSRD; // indicate Flush + BusRd
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
@@ -206,6 +209,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
 			requests[core_index]->addr = addr;
+			requests[core_index]->index = index;
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
 			requests[core_index]->data = request->data;
 			core_has_request[core_index] = 1;
@@ -220,6 +224,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
+			requests[core_index]->index = index;
 			requests[core_index]->addr = addr;
 			requests[core_index]->data = request->data;
 			requests[core_index]->type = FLUSH_BUSRDX; // indicate Flush + BusRdX
@@ -232,6 +237,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
 			requests[core_index]->offset = offset;
+			requests[core_index]->index = index;
 			requests[core_index]->addr = addr;
 			requests[core_index]->data = request->data;
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
@@ -462,6 +468,7 @@ void check_if_req_fulfilled() {
 		PR_REQ* pr_req = pr_requests[curr_request->core_index];
 		int core_ind = curr_request->core_index;
 		requests[core_ind] = NULL;
+		
 
 		if (pr_req->type == PRRD) { // so core wants to read the updated data
 			pr_req->data = dsrams_array[core_ind]->sram[curr_request->index][curr_request->offset]; // giving the core the data from cache

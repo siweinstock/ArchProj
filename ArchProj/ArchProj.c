@@ -251,11 +251,12 @@ void memory(int id) {
 
     // load
     if (exmem[id]->MemRead) {
+       
         PrRd(pr_req[id]);
         if (!pr_req[id]->done) {
             printf("cache stall %d\n", id);
-            R[id][pr_req[id]->addr] = pr_req[id]->data;
-            printf("RD[%d][%d]=%X\n", id, pr_req[id]->addr, pr_req[id]->data);
+            //R[id][pr_req[id]->addr] = pr_req[id]->data;
+            //printf("RD[%d][%d]=%X\n", id, pr_req[id]->addr, pr_req[id]->data);
             
         }
         else {
@@ -263,10 +264,12 @@ void memory(int id) {
             //if (choose_core() == id)
             if (choose_core() == id)
                 cachestall[id] = 1;
-
-            R[id][pr_req[id]->addr] = pr_req[id]->data;
+            printf("Helo!!!\n");
+            memwb[id]->result = pr_req[id]->data;
+            //R[id][pr_req[id]->addr] = pr_req[id]->data;
             printf("RD[%d]=%X\n", id, pr_req[id]->data);
         }
+        
 
     }
     // store
@@ -284,10 +287,17 @@ void memory(int id) {
                 cachestall[id] = 0;
         }
     }
-
+    
 }
 
 void writeback(int id) {
+    if (pr_req[id] != NULL) {
+        if (pr_req[id]->done) {
+            memwb[id]->result = pr_req[id]->data;
+        }
+    }
+    
+
     memcpy(R[id], tmp[id], 16 * sizeof(int));
     if (memwb[id]->RegWrite) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
@@ -350,8 +360,8 @@ int main(int argc, char* argv[]) {
 
     init();
     init_caches();
-    f[5] = fopen(argv[5], "r");
-    load_main_memory(f[5], main_memory);
+    f[4] = fopen(argv[5], "r");
+    load_main_memory(f[4], main_memory);
 
     int start = 1;
     int halting[4] = { 0 };
@@ -359,6 +369,7 @@ int main(int argc, char* argv[]) {
 
     while (start || halt_prop[0] < 3 || halt_prop[1] < 3 || halt_prop[2] < 3 || halt_prop[3] < 3) {
         start = 0;
+        
         for (id = 0; id < 4; id++) {
             if (halt_prop[id] == 3) // core stopped
                 continue;
@@ -366,6 +377,7 @@ int main(int argc, char* argv[]) {
                 halt_prop[id]++;
             
             writeback(id);
+
             if (!cachestall[id]) {
                 state[id]->W = state[id]->M;
                 memory(id);
