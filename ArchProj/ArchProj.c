@@ -317,7 +317,7 @@ int hazard_detector(int id) {
     }
 
     if (idex[id]->valid && exmem[id]->valid) {
-        if (id == 0)
+        //if (id == 0)
             //printf("haz1check: %d %d %d\n", exmem[id]->rd, idex[id]->rs, idex[id]->rt);
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
             //printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
@@ -330,7 +330,7 @@ int hazard_detector(int id) {
     }
 
     if (idex[id]->valid && memwb[id]->valid) {
-        if (id==0)
+        //if (id==0)
             //printf("haz2check: %d %d %d\n", memwb[id]->rd, idex[id]->rs, idex[id]->rt);
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
             //printf("HAZARD 2a {%d %d}\n", memwb[id]->pc, idex[id]->pc);
@@ -375,6 +375,9 @@ int main(int argc, char* argv[]) {
     while (start || !core_stopped(0) || !core_stopped(1) || !core_stopped(2) || !core_stopped(3)) {
         start = 0;
         
+        if (count[0] == 1153)
+            printf("1153\n");
+
         for (id = 0; id < 4; id++) {
             if (halt_prop[id] == 3 && cachestall[id] == 0) {// core stopped 
                 continue;
@@ -413,9 +416,9 @@ int main(int argc, char* argv[]) {
                 state[id]->W = -1;
             }
 
-
-            if (SHOW_DUMP && id==0) {
-                fprintf(stdout, "{%d} %3d: ", cachestall[id], count[id]);
+            if (SHOW_DUMP) {
+            //if (SHOW_DUMP && id==0) {
+                fprintf(fout[id], "%3d: ", count[id]);
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];
@@ -458,12 +461,12 @@ int main(int argc, char* argv[]) {
                 }
 
 
-                fprintf(stdout, "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
+                fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
 
                 for (int j = 2; j < 15; j++) {
-                    fprintf(stdout, "%3X, ", R[id][j]);
+                    fprintf(fout[id], "%3X, ", R[id][j]);
                 }
-                fprintf(stdout, "\n");
+                fprintf(fout[id], "\n");
 
             }
             count[id]++;
