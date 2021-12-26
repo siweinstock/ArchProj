@@ -203,8 +203,6 @@ void PrWr(PR_REQ* request) {
 			return;
 		}
 		else { // the state is S or I so same as above but activate BusRdX
-			//dsram->sram[index][offset] = request->data;
-			//tsram->MESI[index] = MODIFIED;
 			// Setting a bus request for BusRdX
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
@@ -247,12 +245,7 @@ void PrWr(PR_REQ* request) {
 			// Need to check if going to state S or E by snooping!
 			
 		}
-
-		// ??? we need here to update the tag to the new one ???
-
 		tsram->tags[index] = tag;
-
-		// ???
 
 	}
 
@@ -329,8 +322,6 @@ void core_i_snoop(int i) {
 	}
 	else if (bus_cmd == FLUSH) { // Flush - some other core is flushing
 		dsrams_array[i]->sram[index][offset] = bus_data; // we copy the flushed data because it is the most updated
-		//printf("flush dsrams_array[%d]=[%d][%d]=%x\n", i, index, offset, bus_data);
-		//tsram->MESI[index] = SHARED;
 	}
 }
 
@@ -364,9 +355,6 @@ void place_request_on_bus() {
 			bus_addr = ((tsrams_array[bus_origid]->tags[curr_request->index] << 8) | 0x000000FC) & (curr_request->index << 2); // the first word in the block
 		}
 	}
-	
-
-
 }
 
 
@@ -416,12 +404,8 @@ void bus_logic_after_snooping() {
 		if (flush_offset == 3) { // This means this was the last word in the block to flush
 			bus_cmd = NO_CMD;
 			flush_offset = 0;
-			//if (bus_origid != 4) { // if it wasnt the main memory flushing
-			//	tsrams_array[bus_origid]->MESI[(bus_addr >> 2) & 0x3F] = SHARED; // now we share the block and everyone can enjoy it
-			//}
-			if (modify_after_rdx) { // After BsRdx we want to write to the cache
-				//printf("curr_request->index = %d\n\n", curr_request->index);
 
+			if (modify_after_rdx) { // After BsRdx we want to write to the cache
 				dsrams_array[curr_request->core_index]->sram[(bus_addr >> 2) & 0x3F][curr_request->offset] = curr_request->data;
 				tsrams_array[curr_request->core_index]->MESI[(bus_addr >> 2) & 0x3F] = MODIFIED;
 				modify_after_rdx = 0;
@@ -474,9 +458,6 @@ void check_if_req_fulfilled() {
 
 		if (pr_req->type == PRRD) { // so core wants to read the updated data
 			pr_req->data = dsrams_array[core_ind]->sram[curr_request->index][curr_request->offset]; // giving the core the data from cache
-			//pr_req->data = dsrams_array[core_ind]->sram[3][3]; // giving the core the data from cache
-			//printf("DATA: dsrams_array[%d]->sram[%d][%d]=%x\n", core_ind, curr_request->index, curr_request->offset, pr_req->data);
-
 			if (tsrams_array[pr_req->core_index]->MESI[pr_req->index] == INVALID) tsrams_array[pr_req->core_index]->MESI[pr_req->index] = SHARED;
 		}
 		pr_req->done = 1; // telling the core that it can continue (use the data)
@@ -497,9 +478,7 @@ void bus_step() {
 		cachestall[core_to_serve] = 1;
 
 		curr_request = requests[core_to_serve];
-		//memcpy(curr_request, requests[core_to_serve], sizeof(BUS_REQ*));
 		core_used_bus(core_to_serve); // update the priority
-		//requests[core_to_serve] = NULL;
 		core_has_request[core_to_serve] = 0;
 		place_request_on_bus();
 		requests[core_to_serve] = NULL;
@@ -516,9 +495,6 @@ void bus_step() {
 	bus_logic_after_snooping();
 
 	check_if_req_fulfilled();
-	//for (int i = 0; i < 4; i++) {
-	//	printf("tsrams_array[%d]->MESI[curr_request->index] = %d\n", i, tsrams_array[i]->MESI[3]);
-	//}
 	
 }
 

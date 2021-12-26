@@ -8,12 +8,6 @@
 #include "ArchProj.h"
 #include "bus.h"
 
-/*#define SHOW_CMD_BREAKDOWN      0
-#define SHOW_CONTROL_SIGNALS    0
-#define SHOW_CMD                0
-#define SHOW_BRANCH             0
-#define SHOW_REGS               0
-*/
 #define SHOW_DUMP               1
 
 
@@ -34,8 +28,6 @@ IF_ID* ifid[4];
 ID_EX* idex[4];
 EX_MEM* exmem[4];
 MEM_WB* memwb[4];
-
-//PR_REQ* pr_req[4];
 
 int branch_taken[4] = { 0 };   // PCSrc
 
@@ -84,7 +76,6 @@ int load_main_memory(FILE* memfile, int img[]) {
 
     while (fgets(line, 10, memfile)) {
         n = strtol(line, NULL, 16);
-        //printf("%d: %s -> %x\n", i, line, n);
         img[i] = n;
         i++;
     }
@@ -223,7 +214,6 @@ void execute(int id) {
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
 
-        //PrRd(pr_req[id]);
         break;
     case SW:
         exmem[id]->MemWrite = 1;
@@ -233,8 +223,6 @@ void execute(int id) {
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
         exmem[id]->pr_req->data = R[id][exmem[id]->rd];
-        //printf("store data %x @ address %d\n", R[id][exmem[id]->rd], exmem[id]->pr_req->addr);
-        //PrWr(pr_req[id]);
         break;
     case HALT:
         exmem[id]->valid = 0;
@@ -258,15 +246,14 @@ void memory(int id) {
     memwb[id]->pr_req = exmem[id]->pr_req;
 
     // load
-    //if (exmem[id]->MemRead) {
     if (exmem[id]->opcode == LW) {
        
         PrRd(memwb[id]->pr_req);
         if (!memwb[id]->pr_req->done) {
         }
         else {
+            // IS THIS NECESSARY?
             if (choose_core() == id) {
-                printf("cachestall = 1\n");
                 cachestall[id] = 1;
             }
 
@@ -276,12 +263,8 @@ void memory(int id) {
 
     }
     // store
-    //else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
     if (exmem[id]->opcode == SW) {
-        //printf("memwb[id]->pr_req->data = %d\n", memwb[id]->pr_req->data);
         PrWr(memwb[id]->pr_req);
-        //printf("PO put done %d, data %x\n", memwb[id]->pr_req->done, memwb[id]->pr_req->data);
-        R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
 
         if (requests[id] == NULL)
             cachestall[id] = 0;
@@ -290,13 +273,13 @@ void memory(int id) {
 }
 
 int writeback(int id) {
-    if (memwb[id]->pr_req != NULL && memwb[id]->opcode == LW) { //&& !cachestall[id]) {
+    if (memwb[id]->pr_req != NULL && memwb[id]->opcode == LW && memwb[id]->pr_req->done == 1) {
         memwb[id]->result = memwb[id]->pr_req->data;
-        //printf("memwb res from prreq\n");
-        //free(memwb[id]->pr_req);
     }
 
     memcpy(R[id], tmp[id], 16 * sizeof(int));
+
+
     if (memwb[id]->RegWrite) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
 
@@ -305,39 +288,28 @@ int writeback(int id) {
         idex[id]->ReadData2 = (idex[id]->rt == 1 ? idex[id]->imm : R[id][idex[id]->rt]);
     }
 
-
-
 }
 
 int hazard_detector(int id) {
 
     if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
-        //printf("WAW hazard\n");
         return 3;
     }
 
     if (idex[id]->valid && exmem[id]->valid) {
-        //if (id == 0)
-            //printf("haz1check: %d %d %d\n", exmem[id]->rd, idex[id]->rs, idex[id]->rt);
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
-            //printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
         if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd > 1) {
-           //printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
     }
 
     if (idex[id]->valid && memwb[id]->valid) {
-        //if (id==0)
-            //printf("haz2check: %d %d %d\n", memwb[id]->rd, idex[id]->rs, idex[id]->rt);
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
-            //printf("HAZARD 2a {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
         if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd > 1) {
-            //printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
     }
@@ -345,7 +317,7 @@ int hazard_detector(int id) {
 }
 
 int core_stopped(int id) {
-    if (halt_prop[id] >= 3 && !cachestall[id])
+    if (halt_prop[id] >= 3 && !cachestall[id] && state[id]->E == -1 && state[id]->M == -1)
         return 1;
     return 0;
 }
@@ -374,12 +346,10 @@ int main(int argc, char* argv[]) {
 
     while (start || !core_stopped(0) || !core_stopped(1) || !core_stopped(2) || !core_stopped(3)) {
         start = 0;
-        
-        if (count[0] == 1153)
-            printf("1153\n");
 
         for (id = 0; id < 4; id++) {
-            if (halt_prop[id] == 3 && cachestall[id] == 0) {// core stopped 
+            // core stopped and pipeline cleared
+            if (core_stopped(id) && state[id]->D == -1 && state[id]->M == -1 && state[id]->E == -1) {
                 continue;
             }
             if (halting[id])
@@ -417,7 +387,6 @@ int main(int argc, char* argv[]) {
             }
 
             if (SHOW_DUMP) {
-            //if (SHOW_DUMP && id==0) {
                 fprintf(fout[id], "%3d: ", count[id]);
                 char stateF[10];
                 char stateD[10];
@@ -429,35 +398,35 @@ int main(int argc, char* argv[]) {
                     strcpy(stateF, "-");
                 }
                 else {
-                    _itoa(state[id]->F, stateF, 10);
+                    _itoa(state[id]->F, stateF, 16);
                 }
 
                 if (state[id]->D < 0) {
                     strcpy(stateD, "-");
                 }
                 else {
-                    _itoa(state[id]->D, stateD, 10);
+                    _itoa(state[id]->D, stateD, 16);
                 }
 
                 if (state[id]->E < 0) {
                     strcpy(stateE, "-");
                 }
                 else {
-                    _itoa(state[id]->E, stateE, 10);
+                    _itoa(state[id]->E, stateE, 16);
                 }
 
                 if (state[id]->M < 0) {
                     strcpy(stateM, "-");
                 }
                 else {
-                    _itoa(state[id]->M, stateM, 10);
+                    _itoa(state[id]->M, stateM, 16);
                 }
 
                 if (state[id]->W < 0) {
                     strcpy(stateW, "-");
                 }
                 else {
-                    _itoa(state[id]->W, stateW, 10);
+                    _itoa(state[id]->W, stateW, 16);
                 }
 
 
@@ -482,7 +451,6 @@ int main(int argc, char* argv[]) {
         }
 
         bus_step();
-        //printf("-\n");
         //getchar();
 
     }
