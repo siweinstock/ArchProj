@@ -124,12 +124,10 @@ void PrRd(PR_REQ* request) {
 		if (tsram->MESI[index]) { // The state is all but invalid (not 0, cache hit) 
 			request->data = dsram->sram[index][offset]; // we take the content and do not involve the bus
 			request->done = 1;
-			/*printf("PO\n");*/
 			return;
 		}
 		else { // The block is invalid (state I)
 			// Setting a bus request for reading
-			//printf("LO PO\n");
 			requests[core_index] = calloc(1, sizeof(BUS_REQ));
 			requests[core_index]->core_index = core_index;
 			requests[core_index]->tag = tag;
@@ -192,19 +190,16 @@ void PrWr(PR_REQ* request) {
 	DSRAM* dsram = dsrams_array[core_index];
 	
 	pr_requests[core_index] = request;
-	printf("%d =?= %d | [%d]%d\n", tag, tsram->tags[index], index, tsram->MESI[index]);
 	if (tag == tsram->tags[index]) { // If the block is in the cache
 		if (tsram->MESI[index] == MODIFIED) { // the state is M so we just modify the content
 			dsram->sram[index][offset] = request->data;
 			request->done = 1;
-			printf("PO\n");
 			return;
 		}
 		else if (tsram->MESI[index] == EXCLUSIVE) { // state is E so we modify the content and go to state M
 			dsram->sram[index][offset] = request->data;
 			tsram->MESI[index] = MODIFIED;
 			request->done = 1;
-			printf("GAM PO\n");
 			return;
 		}
 		else { // the state is S or I so same as above but activate BusRdX
@@ -220,7 +215,6 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
 			requests[core_index]->data = request->data;
 			core_has_request[core_index] = 1;
-			printf("LO TOV\n");
 			// Need to check if going to state S or E by snooping!
 			return;
 		}

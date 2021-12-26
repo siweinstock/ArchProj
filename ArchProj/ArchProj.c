@@ -27,6 +27,7 @@ int R[4][16] = { 0 };
 int tmp[4][16] = { 0 };
 
 int count[4] = { 0 };
+int halt_prop[4] = { 0 };
 
 State* state[4];
 IF_ID* ifid[4];
@@ -85,7 +86,6 @@ int load_main_memory(FILE* memfile, int img[]) {
         n = strtol(line, NULL, 16);
         //printf("%d: %s -> %x\n", i, line, n);
         img[i] = n;
-        printf("mem[%d]=%x\n", i, n);
         i++;
     }
 
@@ -233,7 +233,7 @@ void execute(int id) {
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
         exmem[id]->pr_req->data = R[id][exmem[id]->rd];
-        printf("store data %x @ address %d\n", R[id][exmem[id]->rd], exmem[id]->pr_req->addr);
+        //printf("store data %x @ address %d\n", R[id][exmem[id]->rd], exmem[id]->pr_req->addr);
         //PrWr(pr_req[id]);
         break;
     case HALT:
@@ -278,9 +278,9 @@ void memory(int id) {
     // store
     //else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
     if (exmem[id]->opcode == SW) {
-        printf("memwb[id]->pr_req->data = %d\n", memwb[id]->pr_req->data);
+        //printf("memwb[id]->pr_req->data = %d\n", memwb[id]->pr_req->data);
         PrWr(memwb[id]->pr_req);
-        printf("PO put done %d, data %x\n", memwb[id]->pr_req->done, memwb[id]->pr_req->data);
+        //printf("PO put done %d, data %x\n", memwb[id]->pr_req->done, memwb[id]->pr_req->data);
         R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
 
         if (requests[id] == NULL)
@@ -312,7 +312,7 @@ int writeback(int id) {
 int hazard_detector(int id) {
 
     if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
-        printf("WAW hazard\n");
+        //printf("WAW hazard\n");
         return 3;
     }
 
@@ -320,11 +320,11 @@ int hazard_detector(int id) {
         if (id == 0)
             //printf("haz1check: %d %d %d\n", exmem[id]->rd, idex[id]->rs, idex[id]->rt);
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
-            printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+            //printf("HAZARD 1a {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
         if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd > 1) {
-           printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
+           //printf("HAZARD 1b {%d %d}\n", exmem[id]->pc, idex[id]->pc);
             return 3;
         }
     }
@@ -333,14 +333,20 @@ int hazard_detector(int id) {
         if (id==0)
             //printf("haz2check: %d %d %d\n", memwb[id]->rd, idex[id]->rs, idex[id]->rt);
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
-            printf("HAZARD 2a {%d %d}\n", memwb[id]->pc, idex[id]->pc);
+            //printf("HAZARD 2a {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
         if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd > 1) {
-            printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
+            //printf("HAZARD 2b {%d %d}\n", memwb[id]->pc, idex[id]->pc);
             return 2;
         }
     }
+    return 0;
+}
+
+int core_stopped(int id) {
+    if (halt_prop[id] >= 3 && !cachestall[id])
+        return 1;
     return 0;
 }
 
@@ -365,16 +371,18 @@ int main(int argc, char* argv[]) {
 
     int start = 1;
     int halting[4] = { 0 };
-    int halt_prop[4] = { 0 };
 
-    while (start || halt_prop[0] < 3 || halt_prop[1] < 3 || halt_prop[2] < 3 || halt_prop[3] < 3) {
+    while (start || !core_stopped(0) || !core_stopped(1) || !core_stopped(2) || !core_stopped(3)) {
         start = 0;
         
         for (id = 0; id < 4; id++) {
-            if (halt_prop[id] == 3) // core stopped
+            if (halt_prop[id] == 3 && cachestall[id] == 0) {// core stopped 
                 continue;
+            }
             if (halting[id])
                 halt_prop[id]++;
+
+
             core = writeback(id);
 
             if (!cachestall[id]) {
