@@ -259,7 +259,7 @@ void memory(int id) {
 
     // load
     //if (exmem[id]->MemRead) {
-    if (exmem[id]->opcode == LW || exmem[id]->opcode == SW) {
+    if (exmem[id]->opcode == LW) {
        
         PrRd(memwb[id]->pr_req);
         if (!memwb[id]->pr_req->done) {
@@ -278,6 +278,7 @@ void memory(int id) {
     // store
     //else if (exmem[id]->MemWrite && memwb[id]->pr_req != NULL) {
     if (exmem[id]->opcode == SW) {
+        printf("memwb[id]->pr_req->data = %d\n", memwb[id]->pr_req->data);
         PrWr(memwb[id]->pr_req);
         printf("PO put done %d, data %x\n", memwb[id]->pr_req->done, memwb[id]->pr_req->data);
         R[id][memwb[id]->pr_req->addr] = memwb[id]->pr_req->data;
@@ -471,7 +472,7 @@ int main(int argc, char* argv[]) {
 
         bus_step();
         //printf("-\n");
-        getchar();
+        //getchar();
 
     }
 

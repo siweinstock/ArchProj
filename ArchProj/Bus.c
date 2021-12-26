@@ -184,9 +184,9 @@ void PrWr(PR_REQ* request) {
 	
 	int core_index = request->core_index;
 	int addr = request->addr;
-	int index = request->index;
-	int tag = request->tag;
-	int offset = request->offset;
+	int offset = addr & 0x3;
+	int index = (addr >> 2) & 0x3F;
+	int tag = (addr >> 8) & 0xFFF;
 
 	TSRAM* tsram = tsrams_array[core_index];
 	DSRAM* dsram = dsrams_array[core_index];
@@ -522,9 +522,9 @@ void bus_step() {
 	bus_logic_after_snooping();
 
 	check_if_req_fulfilled();
-	for (int i = 0; i < 4; i++) {
-		printf("tsrams_array[%d]->MESI[curr_request->index] = %d\n", i, tsrams_array[i]->MESI[3]);
-	}
+	//for (int i = 0; i < 4; i++) {
+	//	printf("tsrams_array[%d]->MESI[curr_request->index] = %d\n", i, tsrams_array[i]->MESI[3]);
+	//}
 	
 }
 
