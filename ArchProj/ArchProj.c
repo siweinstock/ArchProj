@@ -13,8 +13,8 @@
 #define IMEM_WIDTH 10
 
 // default file names
-char* fnames[28] = { "sim.exe", "imem0.txt", "imem1.txt", "imem2.txt", "imem3.txt", "memin.txt", "memout.txt", "rgout0.txt", "regout1.txt", "regout2.txt", "regout3.txt", "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt", "bustrace.txt", "dsram0.txt", "dsram1.txt", "dsram2.txt", "dsram3.txt", "tsram0.txt", "tsram1.txt", "tsram2.txt", "tsram3.txt", "stats0.txt", "stats1.txt", "stats2.txt", "stats3.txt" };
-
+char* fnames[28] = { "sim.exe", "imem0.txt", "imem1.txt", "imem2.txt", "imem3.txt", "memin.txt", "memout.txt", "regout0.txt", "regout1.txt", "regout2.txt", "regout3.txt", "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt", "bustrace.txt", "dsram0.txt", "dsram1.txt", "dsram2.txt", "dsram3.txt", "tsram0.txt", "tsram1.txt", "tsram2.txt", "tsram3.txt", "stats0.txt", "stats1.txt", "stats2.txt", "stats3.txt" };
+FILE* files[28];
 
 int imem_img[4][IMEM_SIZE];
 int imem_size[4];
@@ -331,9 +331,64 @@ int core_stopped(int id) {
 }
 
 
-int main(int argc, char* argv[]) {
-    FILE* files[28];
+void trace(int id) {
+    fprintf(files[id+11], "%d ", count[id]);
 
+    char stateF[10];
+    char stateD[10];
+    char stateE[10];
+    char stateM[10];
+    char stateW[10];
+
+    if (state[id]->F < 0) {
+        fprintf(files[id + 11], "--- ");
+    }
+    else {
+        fprintf(files[id + 11], "%03X ", state[id]->F);
+    }
+
+    if (state[id]->D < 0) {
+        fprintf(files[id + 11], "--- ");
+    }
+    else {
+        fprintf(files[id + 11], "%03X ", state[id]->D);
+    }
+
+    if (state[id]->E < 0) {
+        fprintf(files[id + 11], "--- ");
+    }
+    else {
+        fprintf(files[id + 11], "%03X ", state[id]->E);
+    }
+
+    if (state[id]->M < 0) {
+        fprintf(files[id + 11], "--- ");
+    }
+    else {
+        fprintf(files[id + 11], "%03X ", state[id]->M);
+    }
+
+    if (state[id]->W < 0) {
+        fprintf(files[id + 11], "--- ");
+    }
+    else {
+        fprintf(files[id + 11], "%03X ", state[id]->W);
+    }
+
+    for (int j = 2; j < 16; j++) {
+        fprintf(files[id + 11], "%08X ", R[id][j]);
+    }
+    fprintf(files[id + 11], "\n");
+   
+}
+
+void regout(int id) {
+    for (int j = 2; j < 16; j++) {
+        fprintf(files[id + 7], "%08X\n", R[id][j]);
+    }
+}
+
+int main(int argc, char* argv[]) {
     int halt = 0;
     int id, core;
 
@@ -410,58 +465,7 @@ int main(int argc, char* argv[]) {
                 state[id]->W = -1;
             }
 
-            if (SHOW_DUMP) {
-                fprintf(files[id+11], "%d ", count[id]);
-
-                char stateF[10];
-                char stateD[10];
-                char stateE[10];
-                char stateM[10];
-                char stateW[10];
-
-                if (state[id]->F < 0) {
-                    fprintf(files[id + 11], "--- ");
-                }
-                else {
-                    fprintf(files[id + 11], "%03X ", state[id]->F);
-                }
-
-                if (state[id]->D < 0) {
-                    fprintf(files[id + 11], "--- ");
-                }
-                else {
-                    fprintf(files[id + 11], "%03X ", state[id]->D);
-                }
-
-                if (state[id]->E < 0) {
-                    fprintf(files[id + 11], "--- ");
-                }
-                else {
-                    fprintf(files[id + 11], "%03X ", state[id]->E);
-                }
-
-                if (state[id]->M < 0) {
-                    fprintf(files[id + 11], "--- ");
-                }
-                else {
-                    fprintf(files[id + 11], "%03X ", state[id]->M);
-                }
-
-                if (state[id]->W < 0) {
-                    fprintf(files[id + 11], "--- ");
-                }
-                else {
-                    fprintf(files[id + 11], "%03X ", state[id]->W);
-                }
-
-                for (int j = 2; j < 16; j++) {
-                    fprintf(files[id + 11], "%08X ", R[id][j]);
-
-                }
-                fprintf(files[id + 11], "\n");
-   
-
-            }
+            trace(id);
             count[id]++;
 
             if (idex[id]->ALUOp == 0x14) {
@@ -477,6 +481,10 @@ int main(int argc, char* argv[]) {
         bus_step();
         //getchar();
 
+    }
+
+    for (int i = 0; i < 4; i++) {
+        regout(i);
     }
 
     for (int i = 1; i < 28; i++) {
