@@ -23,6 +23,10 @@ int R[4][16] = { 0 };
 int tmp[4][16] = { 0 };
 
 int count[4] = { 0 };
+int insts[4] = { 0 };
+int decode_stall[4] = { 0 };
+int mem_stall[4] = { 0 };
+
 int halt_prop[4] = { 0 };
 
 State* state[4];
@@ -237,6 +241,9 @@ void execute(int id) {
         exmem[id]->valid = 0;
         break;
     }
+
+    if (exmem[id]->valid)
+        insts[id]++;
 }
 
 // memory RTL
@@ -299,24 +306,29 @@ int writeback(int id) {
 int hazard_detector(int id) {
     // WAW detection
     if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
+        decode_stall[id] += 3;
         return 3;
     }
 
     // hazard between decode and execute stages
     if (idex[id]->valid && exmem[id]->valid) {
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
+            decode_stall[id] += 3;
             return 3;
         }
         if (exmem[id]->rd == idex[id]->rt && exmem[id]->rd > 1) {
+            decode_stall[id] += 3;
             return 3;
         }
     }
     // hazard between decode and memory stages
     if (idex[id]->valid && memwb[id]->valid) {
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
+            decode_stall[id] += 2;
             return 2;
         }
         if (memwb[id]->rd == idex[id]->rt && memwb[id]->rd > 1) {
+            decode_stall[id] += 2;
             return 2;
         }
     }
@@ -329,7 +341,6 @@ int core_stopped(int id) {
         return 1;
     return 0;
 }
-
 
 void trace(int id) {
     fprintf(files[id+11], "%d ", count[id]);
@@ -386,6 +397,24 @@ void regout(int id) {
     for (int j = 2; j < 16; j++) {
         fprintf(files[id + 7], "%08X\n", R[id][j]);
     }
+}
+
+void stats(int id) {
+    //fprintf(files[id + 24], "cycles %d\n", count[id]);
+    //fprintf(files[id + 24], "instructions %d\n", insts[id]);
+    //fprintf(files[id + 24], "read_hit %d\n", num_of_read_hits[id]);
+    //fprintf(files[id + 24], "write_hit %d\n", num_of_write_hits[id]);
+    //fprintf(files[id + 24], "read_miss %d\n", num_of_read_misses[id]);
+    //fprintf(files[id + 24], "write_miss %d\n", num_of_write_misses[id]);
+    fprintf(files[id + 24], "cycles %d\n", count[id]);
+    fprintf(files[id + 24], "instructions %d\n", insts[id]+1);
+    fprintf(files[id + 24], "read_hit %d\n", num_of_read_hits[id]);
+    fprintf(files[id + 24], "write_hit %d\n", num_of_write_hits[id]);
+    fprintf(files[id + 24], "read_miss %d\n", num_of_read_misses[id]);
+    fprintf(files[id + 24], "write_miss %d\n", num_of_write_misses[id]);
+    fprintf(files[id + 24], "decode_stall %d\n", decode_stall[id]);
+    fprintf(files[id + 24], "mem_stall %d\n", mem_stall[id]);
+    
 }
 
 int main(int argc, char* argv[]) {
@@ -463,6 +492,7 @@ int main(int argc, char* argv[]) {
             }
             else {
                 state[id]->W = -1;
+                mem_stall[id] += 1;
             }
 
             trace(id);
@@ -479,13 +509,21 @@ int main(int argc, char* argv[]) {
         }
 
         bus_step();
+        //print_bus_trace_line(files[15]);
         //getchar();
 
     }
 
     for (int i = 0; i < 4; i++) {
         regout(i);
+        dump_dsram(files[16+i], i);
+        dump_tsram(files[20+i], i);
+        stats(i);
+        //printf("%d\n", count[i]);
     }
+
+    dump_memory(files[6]);
+
 
     for (int i = 1; i < 28; i++) {
         fclose(files[i]);

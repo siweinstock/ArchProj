@@ -64,18 +64,18 @@ int cachestall[4];
 int bus_cycle;
 
 // things for statistics:
-int num_of_read_hits;
-int num_of_write_hits;
-int num_of_read_misses;
-int num_of_write_misses;
+int num_of_read_hits[4];
+int num_of_write_hits[4];
+int num_of_read_misses[4];
+int num_of_write_misses[4];
 
 
 // for dumping data each cycle
 void print_bus_trace_line(FILE* trace_file);
 
 // for dumping data in the end
-void dump_dsrams(FILE* files[4]);
-void dump_tsrams(FILE* files[4]);
+void dump_dsram(FILE* files, int id);
+void dump_tsram(FILE* files, int id);
 void dump_memory(FILE* file);
 
 
