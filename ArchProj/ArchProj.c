@@ -9,7 +9,6 @@
 
 #define SHOW_DUMP               1
 
-
 #define IMEM_SIZE 1024
 #define IMEM_WIDTH 10
 
@@ -32,7 +31,7 @@ int branch_taken[4] = { 0 };   // PCSrc
 
 int hazard[4] = { 0 };
 
-
+// initialize structs
 void init() {
     int i;
     for (i = 0; i < 4; i++) {
@@ -82,6 +81,7 @@ int load_main_memory(FILE* memfile, int img[]) {
     return i;
 }
 
+// fetch RTL
 void fetch(int id) {
     if (branch_taken[id]) {
         ifid[id]->pc = idex[id]->addr;
@@ -98,16 +98,19 @@ void fetch(int id) {
 
 }
 
+// decode RTL
 void decode(int id) {
     idex[id]->valid = ifid[id]->valid;
     idex[id]->pc = ifid[id]->pc;
 
+    // parse command
     idex[id]->imm = (ifid[id]->inst & 0xFFF); // sign extended immediate
     idex[id]->rt = (ifid[id]->inst >> 12) & 0xF;
     idex[id]->rs = (ifid[id]->inst >> 16) & 0xF;
     idex[id]->rd = (ifid[id]->inst >> 20) & 0xF;
     idex[id]->ALUOp = (ifid[id]->inst >> 24) & 0xFF;
 
+    // set control signals
     idex[id]->RegDst = (idex[id]->rs != 1) && (idex[id]->rt != 1);
     idex[id]->ALUSrc = ((idex[id]->rs == 1 || idex[id]->rt == 1) ? 1 : 0);  // is immediate involved?
     idex[id]->Branch = ((idex[id]->ALUOp >= BEQ && idex[id]->ALUOp <= JAL) ? 1 : 0); // is branch command?
@@ -119,10 +122,11 @@ void decode(int id) {
 
 }
 
+// execute RTL
 void execute(int id) {
+    // pass from prev stage
     exmem[id]->ReadData1 = idex[id]->ReadData1;
     exmem[id]->ReadData2 = idex[id]->ReadData2;
-
     exmem[id]->valid = idex[id]->valid;
     exmem[id]->pc = idex[id]->pc;
     exmem[id]->opcode = idex[id]->ALUOp;
@@ -131,7 +135,7 @@ void execute(int id) {
     exmem[id]->rs = idex[id]->rs;
     exmem[id]->rt = idex[id]->rt;
 
-    exmem[id]->pr_req = NULL;
+    exmem[id]->pr_req = NULL;   // remove preveous request
 
     switch (idex[id]->ALUOp) {
     case ADD:
@@ -216,12 +220,14 @@ void execute(int id) {
         break;
     case SW:
         exmem[id]->MemWrite = 1;
+
         // create requst
         exmem[id]->pr_req = calloc(1, sizeof(PR_REQ));
         exmem[id]->pr_req->type = PRWR;
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
         exmem[id]->pr_req->data = R[id][exmem[id]->rd];
+
         break;
     case HALT:
         exmem[id]->valid = 0;
@@ -229,33 +235,26 @@ void execute(int id) {
     }
 }
 
+// memory RTL
 void memory(int id) {
+    // pass from prev stage
     memwb[id]->valid = exmem[id]->valid;
     memwb[id]->pc = exmem[id]->pc;
     memwb[id]->opcode = exmem[id]->opcode;
-
     memwb[id]->rd = exmem[id]->rd;
     memwb[id]->rs = exmem[id]->rs;
     memwb[id]->rt = exmem[id]->rt;
     memwb[id]->result = exmem[id]->result;
-
     memwb[id]->result = exmem[id]->result;
     memwb[id]->RegWrite = exmem[id]->RegWrite;
-
     memwb[id]->pr_req = exmem[id]->pr_req;
 
     // load
     if (exmem[id]->opcode == LW && !memwb[id]->pr_req->done) {
        
         PrRd(memwb[id]->pr_req);
-        if (!memwb[id]->pr_req->done) {
-        }
-        else {
-            // IS THIS NECESSARY?
-            //if (choose_core() == id) {
-            //    cachestall[id] = 1;
-            //}
-
+        // cache hit - fetch data from cache
+        if (memwb[id]->pr_req->done) {
             memwb[id]->result = memwb[id]->pr_req->data;
         }
 
@@ -271,14 +270,17 @@ void memory(int id) {
     
 }
 
+// writeback RTL
 int writeback(int id) {
+    // if LW is done read correct data
     if (memwb[id]->pr_req != NULL && memwb[id]->opcode == LW && memwb[id]->pr_req->done == 1) {
         memwb[id]->result = memwb[id]->pr_req->data;
     }
 
+    // write to registers with one cycle delay
     memcpy(R[id], tmp[id], 16 * sizeof(int));
 
-
+    // update registers to be written next cycle
     if (memwb[id]->RegWrite) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
 
@@ -289,12 +291,14 @@ int writeback(int id) {
 
 }
 
+// hazard detection unit. returns number of cycles to stall
 int hazard_detector(int id) {
-
+    // WAW detection
     if (idex[id]->ALUOp == SW && idex[id]->rd == exmem[id]->rd) {
         return 3;
     }
 
+    // hazard between decode and execute stages
     if (idex[id]->valid && exmem[id]->valid) {
         if (exmem[id]->rd == idex[id]->rs && exmem[id]->rd > 1) {
             return 3;
@@ -303,7 +307,7 @@ int hazard_detector(int id) {
             return 3;
         }
     }
-
+    // hazard between decode and memory stages
     if (idex[id]->valid && memwb[id]->valid) {
         if (memwb[id]->rd == idex[id]->rs && memwb[id]->rd > 1) {
             return 2;
@@ -315,6 +319,7 @@ int hazard_detector(int id) {
     return 0;
 }
 
+// check if core is halted
 int core_stopped(int id) {
     if (halt_prop[id] >= 3 && !cachestall[id] && state[id]->E == -1 && state[id]->M == -1)
         return 1;
@@ -329,6 +334,10 @@ int main(int argc, char* argv[]) {
     int halt = 0;
     int id, core;
 
+    if (argc == 28) {
+
+    }
+
     for (id = 0; id < 4; id++) {
         f[id] = fopen(argv[id + 1], "r");
         fout[id] = fopen(nout[id], "w");
@@ -337,12 +346,14 @@ int main(int argc, char* argv[]) {
 
     init();
     init_caches();
+
     f[4] = fopen(argv[5], "r");
     load_main_memory(f[4], main_memory);
 
-    int start = 1;
-    int halting[4] = { 0 };
+    int start = 1;  // start signal
+    int halting[4] = { 0 }; // track which core is halted
 
+    // keep running as long as at least one core is running (or received start signal)
     while (start || !core_stopped(0) || !core_stopped(1) || !core_stopped(2) || !core_stopped(3)) {
         start = 0;
 
@@ -387,7 +398,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (SHOW_DUMP) {
-                fprintf(fout[id], "%3d: ", count[id]);
+                fprintf(fout[id], "%d ", count[id]);
 
                 char stateF[10];
                 char stateD[10];
@@ -396,46 +407,42 @@ int main(int argc, char* argv[]) {
                 char stateW[10];
 
                 if (state[id]->F < 0) {
-                    strcpy(stateF, "-");
+                    fprintf(fout[id], "--- ");
                 }
                 else {
-                    _itoa(state[id]->F, stateF, 16);
+                    fprintf(fout[id], "%03X ", state[id]->F);
                 }
 
                 if (state[id]->D < 0) {
-                    strcpy(stateD, "-");
+                    fprintf(fout[id], "--- ");
                 }
                 else {
-                    _itoa(state[id]->D, stateD, 16);
+                    fprintf(fout[id], "%03X ", state[id]->D);
                 }
 
                 if (state[id]->E < 0) {
-                    strcpy(stateE, "-");
+                    fprintf(fout[id], "--- ");
                 }
                 else {
-                    _itoa(state[id]->E, stateE, 16);
+                    fprintf(fout[id], "%03X ", state[id]->E);
                 }
 
                 if (state[id]->M < 0) {
-                    strcpy(stateM, "-");
+                    fprintf(fout[id], "--- ");
                 }
                 else {
-                    _itoa(state[id]->M, stateM, 16);
+                    fprintf(fout[id], "%03X ", state[id]->M);
                 }
 
                 if (state[id]->W < 0) {
-                    strcpy(stateW, "-");
+                    fprintf(fout[id], "--- ");
                 }
                 else {
-                    _itoa(state[id]->W, stateW, 16);
+                    fprintf(fout[id], "%03X ", state[id]->W);
                 }
 
-
-                fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
-
-
-                for (int j = 2; j < 15; j++) {
-                    fprintf(fout[id], "%3X, ", R[id][j]);
+                for (int j = 2; j < 16; j++) {
+                    fprintf(fout[id], "%08X ", R[id][j]);
 
                 }
                 fprintf(fout[id], "\n");
@@ -456,7 +463,6 @@ int main(int argc, char* argv[]) {
 
         bus_step();
         //getchar();
-
 
     }
 

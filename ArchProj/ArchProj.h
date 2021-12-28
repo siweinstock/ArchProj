@@ -43,12 +43,12 @@ typedef struct IF_ID {
 typedef struct ID_EX {
     int valid;
     int pc;
+
     // parsed instruction
     int imm;
     int rt;
     int rs;
     int rd;
-    //int opcode;
 
     // control signals
     int ALUSrc;
@@ -75,10 +75,10 @@ typedef struct EX_MEM {
     int rd;
     int opcode;
     int result;
-    //int addr;
     int ReadData1;
     int ReadData2;
 
+    // load store request
     PR_REQ* pr_req;
 
 
@@ -103,8 +103,10 @@ typedef struct MEM_WB {
     int opcode;
     int result;
 
+    // load store request
     PR_REQ* pr_req;
 
+    // control signals
     int ReadData;
     int RegWrite;
 
