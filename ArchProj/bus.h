@@ -2,7 +2,7 @@
 
 #define BLOCKS_IN_CACHE      64
 #define WORDS_IN_BLOCK	     4
-#define MAIN_MEM_SIZE        16384
+#define MAIN_MEM_SIZE        8192
 #define BLOCKS_IN_MAIN_MEM   262144
 #define NO_CMD               0
 #define BUSRD                1

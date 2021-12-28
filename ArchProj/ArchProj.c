@@ -12,6 +12,10 @@
 #define IMEM_SIZE 1024
 #define IMEM_WIDTH 10
 
+// default file names
+char* fnames[28] = { "sim.exe", "imem0.txt", "imem1.txt", "imem2.txt", "imem3.txt", "memin.txt", "memout.txt", "rgout0.txt", "regout1.txt", "regout2.txt", "regout3.txt", "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt", "bustrace.txt", "dsram0.txt", "dsram1.txt", "dsram2.txt", "dsram3.txt", "tsram0.txt", "tsram1.txt", "tsram2.txt", "tsram3.txt", "stats0.txt", "stats1.txt", "stats2.txt", "stats3.txt" };
+
+
 int imem_img[4][IMEM_SIZE];
 int imem_size[4];
 
@@ -328,27 +332,36 @@ int core_stopped(int id) {
 
 
 int main(int argc, char* argv[]) {
-    FILE* f[5]; // = fopen(argv[1], "r");
-    FILE* fout[4];
-    char* nout[4] = { "core0trace.txt", "core1trace.txt", "core2trace.txt", "core3trace.txt" };
+    FILE* files[28];
+
     int halt = 0;
     int id, core;
 
+    // open given files (assume correct) or default if not given
     if (argc == 28) {
-
+        for (int i = 1; i < 28; i++) {
+            if (i < 6)
+                files[i] = fopen(argv[i], "r");
+            else
+                files[i] = fopen(argv[i], "w");
+        }
+    }
+    else {
+        for (int i = 1; i < 28; i++) {
+            if (i < 6)
+                files[i] = fopen(fnames[i], "r");
+            else
+                files[i] = fopen(fnames[i], "w");
+        }
     }
 
     for (id = 0; id < 4; id++) {
-        f[id] = fopen(argv[id + 1], "r");
-        fout[id] = fopen(nout[id], "w");
-        imem_size[id] = load_instruction_memory(f[id], imem_img[id], 8);
+        imem_size[id] = load_instruction_memory(files[id + 1], imem_img[id], 8);
     }
 
     init();
     init_caches();
-
-    f[4] = fopen(argv[5], "r");
-    load_main_memory(f[4], main_memory);
+    load_main_memory(files[5], main_memory);
 
     int start = 1;  // start signal
     int halting[4] = { 0 }; // track which core is halted
@@ -398,7 +411,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (SHOW_DUMP) {
-                fprintf(fout[id], "%d ", count[id]);
+                fprintf(files[id+11], "%d ", count[id]);
 
                 char stateF[10];
                 char stateD[10];
@@ -407,45 +420,45 @@ int main(int argc, char* argv[]) {
                 char stateW[10];
 
                 if (state[id]->F < 0) {
-                    fprintf(fout[id], "--- ");
+                    fprintf(files[id + 11], "--- ");
                 }
                 else {
-                    fprintf(fout[id], "%03X ", state[id]->F);
+                    fprintf(files[id + 11], "%03X ", state[id]->F);
                 }
 
                 if (state[id]->D < 0) {
-                    fprintf(fout[id], "--- ");
+                    fprintf(files[id + 11], "--- ");
                 }
                 else {
-                    fprintf(fout[id], "%03X ", state[id]->D);
+                    fprintf(files[id + 11], "%03X ", state[id]->D);
                 }
 
                 if (state[id]->E < 0) {
-                    fprintf(fout[id], "--- ");
+                    fprintf(files[id + 11], "--- ");
                 }
                 else {
-                    fprintf(fout[id], "%03X ", state[id]->E);
+                    fprintf(files[id + 11], "%03X ", state[id]->E);
                 }
 
                 if (state[id]->M < 0) {
-                    fprintf(fout[id], "--- ");
+                    fprintf(files[id + 11], "--- ");
                 }
                 else {
-                    fprintf(fout[id], "%03X ", state[id]->M);
+                    fprintf(files[id + 11], "%03X ", state[id]->M);
                 }
 
                 if (state[id]->W < 0) {
-                    fprintf(fout[id], "--- ");
+                    fprintf(files[id + 11], "--- ");
                 }
                 else {
-                    fprintf(fout[id], "%03X ", state[id]->W);
+                    fprintf(files[id + 11], "%03X ", state[id]->W);
                 }
 
                 for (int j = 2; j < 16; j++) {
-                    fprintf(fout[id], "%08X ", R[id][j]);
+                    fprintf(files[id + 11], "%08X ", R[id][j]);
 
                 }
-                fprintf(fout[id], "\n");
+                fprintf(files[id + 11], "\n");
    
 
             }
@@ -466,9 +479,8 @@ int main(int argc, char* argv[]) {
 
     }
 
-    for (id = 0; id < 4; id++) {
-        fclose(fout[id]);
-        fclose(f[id]);
+    for (int i = 1; i < 28; i++) {
+        fclose(files[i]);
     }
 
 
