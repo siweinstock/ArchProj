@@ -103,7 +103,38 @@ int choose_core() {
 }
 //*************************************************************************************************************************
 
+void print_bus_trace_line(FILE* trace_file){
+	fprintf(trace_file, "%d %01X %01X %05X %08X %01X\n", bus_cycle, bus_origid, bus_cmd, bus_addr, bus_data, bus_shared);
 
+}
+
+void dump_dsrams(FILE* files[4]) {
+	int i, j, k;
+	for (i = 0; i < 4; i++) { // going over all the cores
+		for (j = 0; j < 64; j++) { // going over all the blocks
+			for (k = 0; k < 4; k++) { // going over all the words in the block
+				fprintf(files[i], "%08X\n", dsrams_array[i]->sram[j][k]);
+			}
+		}
+	}
+}
+
+void dump_tsrams(FILE* files[4]) {
+	int i, j, line;
+	for (i = 0; i < 4; i++) { // going over all the cores
+		for (j = 0; j < 64; j++) { // going over all the blocks
+			line = (tsrams_array[i]->MESI[j] << 12) | tsrams_array[i]->tags[j];
+			fprintf(files[i], "%08X\n", line);
+		}
+	}
+}
+
+void dump_memory(FILE* file) {
+	int i;
+	for (i = 0; i < MAIN_MEM_SIZE; i++) { // going over all the words
+		fprintf(file, "%08X\n", main_memory[i]);
+	}
+}
 
 // This is a function that a core can call in order to request reading data from the cache. 
 // when the request is served the field done will be 1 and the requested word will be in field data
@@ -124,6 +155,7 @@ void PrRd(PR_REQ* request) {
 		if (tsram->MESI[index]) { // The state is all but invalid (not 0, cache hit) 
 			request->data = dsram->sram[index][offset]; // we take the content and do not involve the bus
 			request->done = 1;
+			num_of_read_hits++;
 			return;
 		}
 		else { // The block is invalid (state I)
@@ -136,7 +168,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->index = index;
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
-			// Need to check if going to state S or E by snooping!
+			num_of_read_misses++;
 			return;
 		}	
 	}
@@ -152,7 +184,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->index = index;
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
-			// Need to check if going to state S or E by snooping!
+			num_of_read_misses++;
 			return;
 		}
 		else {
@@ -165,7 +197,7 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->index = index;
 			requests[core_index]->type = FLUSH_BUSRD; // indicate Flush + BusRd
 			core_has_request[core_index] = 1;
-			// Need to check if going to state S or E by snooping!
+			num_of_read_misses++;
 			return;
 		}
 	}
@@ -194,12 +226,14 @@ void PrWr(PR_REQ* request) {
 		if (tsram->MESI[index] == MODIFIED) { // the state is M so we just modify the content
 			dsram->sram[index][offset] = request->data;
 			request->done = 1;
+			num_of_write_hits++;
 			return;
 		}
 		else if (tsram->MESI[index] == EXCLUSIVE) { // state is E so we modify the content and go to state M
 			dsram->sram[index][offset] = request->data;
 			tsram->MESI[index] = MODIFIED;
 			request->done = 1;
+			num_of_write_hits++;
 			return;
 		}
 		else { // the state is S or I so same as above but activate BusRdX
@@ -213,7 +247,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
 			requests[core_index]->data = request->data;
 			core_has_request[core_index] = 1;
-			// Need to check if going to state S or E by snooping!
+			num_of_write_misses++;
 			return;
 		}
 	}
@@ -229,7 +263,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->data = request->data;
 			requests[core_index]->type = FLUSH_BUSRDX; // indicate Flush + BusRdX
 			core_has_request[core_index] = 1;
-			
+			num_of_write_misses++;
 		}
 		else {
 			// Setting a bus request for BusRdX
@@ -243,7 +277,7 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->type = BUSRDX; // indicate BusRdX
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
-			
+			num_of_write_misses++;
 		}
 		tsram->tags[index] = tag;
 
