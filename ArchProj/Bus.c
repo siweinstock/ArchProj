@@ -170,7 +170,6 @@ void PrRd(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
 			cachestall[core_index] = 1;
-			printf("-3cachestall[%d] = 1\n", core_index);
 			return;
 		}	
 	}
@@ -188,7 +187,6 @@ void PrRd(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
 			cachestall[core_index] = 1;
-			printf("-2cachestall[%d] = 1\n", core_index);
 			return;
 		}
 		else {
@@ -203,7 +201,6 @@ void PrRd(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
 			cachestall[core_index] = 1;
-			printf("-1cachestall[%d] = 1\n", core_index);
 			return;
 		}
 	}
@@ -255,7 +252,6 @@ void PrWr(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			num_of_write_misses++;
 			cachestall[core_index] = 1;
-			printf("1cachestall[%d] = 1\n", core_index);
 			return;
 		}
 	}
@@ -273,7 +269,6 @@ void PrWr(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			num_of_write_misses++;
 			cachestall[core_index] = 1;
-			printf("2cachestall[%d] = 1\n", core_index);
 		}
 		else {
 			// Setting a bus request for BusRdX
@@ -289,7 +284,6 @@ void PrWr(PR_REQ* request) {
 			// Need to check if going to state S or E by snooping!
 			num_of_write_misses++;
 			cachestall[core_index] = 1;
-			printf("3cachestall[%d] = 1\n", core_index);
 		}
 		tsram->tags[index] = tag;
 
@@ -476,7 +470,6 @@ void bus_logic_after_snooping() {
 			else {
 				curr_request->done = 1; // request fullfiled
 				cachestall[curr_request->core_index] = 0;
-				printf("\n\ncore %d is not cache stalling anymore\n\n", curr_request->core_index);
 			}
 			
 		}

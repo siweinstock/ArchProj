@@ -388,7 +388,7 @@ int main(int argc, char* argv[]) {
 
             if (SHOW_DUMP) {
                 fprintf(fout[id], "%3d: ", count[id]);
-                printf("%3d: ", count[id]);
+
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];
@@ -432,14 +432,14 @@ int main(int argc, char* argv[]) {
 
 
                 fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
-                printf("%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
+
 
                 for (int j = 2; j < 15; j++) {
                     fprintf(fout[id], "%3X, ", R[id][j]);
-                    printf("%3X, ", R[id][j]);
+
                 }
                 fprintf(fout[id], "\n");
-                printf("\n");
+   
 
             }
             count[id]++;
@@ -456,7 +456,7 @@ int main(int argc, char* argv[]) {
 
         bus_step();
         //getchar();
-        printf("cachestall[3] = %d\n", cachestall[3]);
+
 
     }
 
@@ -465,6 +465,6 @@ int main(int argc, char* argv[]) {
         fclose(f[id]);
     }
 
-    printf("%d\n", main_memory[0]);
+
     return 0;
 }
