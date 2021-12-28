@@ -23,7 +23,7 @@ DSRAM* dsrams_array[4];
 TSRAM* tsrams_array[4];
 
 
-int priorities[4] = { 0, 1, 2, 3 };
+int priorities[4] = { 3, 2, 1, 0 };
 int core_has_request[4] = { 0, 0, 0, 0 };
 
 PR_REQ* pr_requests[4];
@@ -169,6 +169,8 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
+			cachestall[core_index] = 1;
+			printf("-3cachestall[%d] = 1\n", core_index);
 			return;
 		}	
 	}
@@ -185,6 +187,8 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->type = BUSRD; // indicate BusRd
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
+			cachestall[core_index] = 1;
+			printf("-2cachestall[%d] = 1\n", core_index);
 			return;
 		}
 		else {
@@ -198,6 +202,8 @@ void PrRd(PR_REQ* request) {
 			requests[core_index]->type = FLUSH_BUSRD; // indicate Flush + BusRd
 			core_has_request[core_index] = 1;
 			num_of_read_misses++;
+			cachestall[core_index] = 1;
+			printf("-1cachestall[%d] = 1\n", core_index);
 			return;
 		}
 	}
@@ -248,6 +254,8 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->data = request->data;
 			core_has_request[core_index] = 1;
 			num_of_write_misses++;
+			cachestall[core_index] = 1;
+			printf("1cachestall[%d] = 1\n", core_index);
 			return;
 		}
 	}
@@ -264,6 +272,8 @@ void PrWr(PR_REQ* request) {
 			requests[core_index]->type = FLUSH_BUSRDX; // indicate Flush + BusRdX
 			core_has_request[core_index] = 1;
 			num_of_write_misses++;
+			cachestall[core_index] = 1;
+			printf("2cachestall[%d] = 1\n", core_index);
 		}
 		else {
 			// Setting a bus request for BusRdX
@@ -278,6 +288,8 @@ void PrWr(PR_REQ* request) {
 			core_has_request[core_index] = 1;
 			// Need to check if going to state S or E by snooping!
 			num_of_write_misses++;
+			cachestall[core_index] = 1;
+			printf("3cachestall[%d] = 1\n", core_index);
 		}
 		tsram->tags[index] = tag;
 
@@ -464,6 +476,7 @@ void bus_logic_after_snooping() {
 			else {
 				curr_request->done = 1; // request fullfiled
 				cachestall[curr_request->core_index] = 0;
+				printf("\n\ncore %d is not cache stalling anymore\n\n", curr_request->core_index);
 			}
 			
 		}
@@ -502,14 +515,14 @@ void check_if_req_fulfilled() {
 
 
 void bus_step() {
+
 	int core_to_serve;
 	if (bus_cmd == NO_CMD) {
 		// code for setting a request and activating it
 		core_to_serve = choose_core();
 
 		if (core_to_serve == -1) return; // No transaction needed
-		
-		cachestall[core_to_serve] = 1;
+		//cachestall[core_to_serve] = 1;
 
 		curr_request = requests[core_to_serve];
 		core_used_bus(core_to_serve); // update the priority

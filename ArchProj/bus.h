@@ -60,6 +60,7 @@ int main_memory[MAIN_MEM_SIZE];
 BUS_REQ* requests[4];
 int cachestall[4];
 
+
 int bus_cycle;
 
 // things for statistics:

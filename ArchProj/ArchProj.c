@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ArchProj.h"
-#include "bus.h"
 
 #define SHOW_DUMP               1
 
@@ -246,16 +245,16 @@ void memory(int id) {
     memwb[id]->pr_req = exmem[id]->pr_req;
 
     // load
-    if (exmem[id]->opcode == LW) {
+    if (exmem[id]->opcode == LW && !memwb[id]->pr_req->done) {
        
         PrRd(memwb[id]->pr_req);
         if (!memwb[id]->pr_req->done) {
         }
         else {
             // IS THIS NECESSARY?
-            if (choose_core() == id) {
-                cachestall[id] = 1;
-            }
+            //if (choose_core() == id) {
+            //    cachestall[id] = 1;
+            //}
 
             memwb[id]->result = memwb[id]->pr_req->data;
         }
@@ -263,7 +262,7 @@ void memory(int id) {
 
     }
     // store
-    if (exmem[id]->opcode == SW) {
+    if (exmem[id]->opcode == SW && !memwb[id]->pr_req->done) {
         PrWr(memwb[id]->pr_req);
 
         if (requests[id] == NULL)
@@ -348,6 +347,7 @@ int main(int argc, char* argv[]) {
         start = 0;
 
         for (id = 0; id < 4; id++) {
+            
             // core stopped and pipeline cleared
             if (core_stopped(id) && state[id]->D == -1 && state[id]->M == -1 && state[id]->E == -1) {
                 continue;
@@ -388,6 +388,7 @@ int main(int argc, char* argv[]) {
 
             if (SHOW_DUMP) {
                 fprintf(fout[id], "%3d: ", count[id]);
+                printf("%3d: ", count[id]);
                 char stateF[10];
                 char stateD[10];
                 char stateE[10];
@@ -431,11 +432,14 @@ int main(int argc, char* argv[]) {
 
 
                 fprintf(fout[id], "%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
+                printf("%s   %s   %s   %s   %s | ", stateF, stateD, stateE, stateM, stateW);
 
                 for (int j = 2; j < 15; j++) {
                     fprintf(fout[id], "%3X, ", R[id][j]);
+                    printf("%3X, ", R[id][j]);
                 }
                 fprintf(fout[id], "\n");
+                printf("\n");
 
             }
             count[id]++;
@@ -452,6 +456,7 @@ int main(int argc, char* argv[]) {
 
         bus_step();
         //getchar();
+        printf("cachestall[3] = %d\n", cachestall[3]);
 
     }
 
@@ -460,6 +465,6 @@ int main(int argc, char* argv[]) {
         fclose(f[id]);
     }
 
-
+    printf("%d\n", main_memory[0]);
     return 0;
 }
