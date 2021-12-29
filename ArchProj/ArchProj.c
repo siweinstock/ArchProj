@@ -400,12 +400,6 @@ void regout(int id) {
 }
 
 void stats(int id) {
-    //fprintf(files[id + 24], "cycles %d\n", count[id]);
-    //fprintf(files[id + 24], "instructions %d\n", insts[id]);
-    //fprintf(files[id + 24], "read_hit %d\n", num_of_read_hits[id]);
-    //fprintf(files[id + 24], "write_hit %d\n", num_of_write_hits[id]);
-    //fprintf(files[id + 24], "read_miss %d\n", num_of_read_misses[id]);
-    //fprintf(files[id + 24], "write_miss %d\n", num_of_write_misses[id]);
     fprintf(files[id + 24], "cycles %d\n", count[id]);
     fprintf(files[id + 24], "instructions %d\n", insts[id]+1);
     fprintf(files[id + 24], "read_hit %d\n", num_of_read_hits[id]);
@@ -419,7 +413,7 @@ void stats(int id) {
 
 int main(int argc, char* argv[]) {
     int halt = 0;
-    int id, core;
+    int id;
 
     // open given files (assume correct) or default if not given
     if (argc == 28) {
@@ -439,10 +433,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // initialize structs and load memory
     for (id = 0; id < 4; id++) {
         imem_size[id] = load_instruction_memory(files[id + 1], imem_img[id], 8);
     }
-
     init();
     init_caches();
     load_main_memory(files[5], main_memory);
@@ -464,7 +458,8 @@ int main(int argc, char* argv[]) {
                 halt_prop[id]++;
 
 
-            core = writeback(id);
+            // pipeline simulation
+            writeback(id);
 
             if (!cachestall[id]) {
                 state[id]->W = state[id]->M;
@@ -495,7 +490,7 @@ int main(int argc, char* argv[]) {
                 mem_stall[id] += 1;
             }
 
-            trace(id);
+            trace(id);  // add current round to trace file
             count[id]++;
 
             if (idex[id]->ALUOp == 0x14) {
@@ -514,14 +509,13 @@ int main(int argc, char* argv[]) {
 
     }
 
+    // populate output files
     for (int i = 0; i < 4; i++) {
         regout(i);
         dump_dsram(files[16+i], i);
         dump_tsram(files[20+i], i);
         stats(i);
-        //printf("%d\n", count[i]);
     }
-
     dump_memory(files[6]);
 
 
