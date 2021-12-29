@@ -104,7 +104,10 @@ int choose_core() {
 //*************************************************************************************************************************
 
 void print_bus_trace_line(FILE* trace_file) {
-	fprintf(trace_file, "%d %01X %01X %05X %08X %01X\n", bus_cycle, bus_origid, bus_cmd, bus_addr, bus_data, bus_shared);
+	if (bus_cmd) {
+		fprintf(trace_file, "%d %01X %01X %05X %08X %01X\n", bus_cycle, bus_origid, bus_cmd, bus_addr, bus_data, bus_shared);
+	}
+	
 }
 
 void dump_dsram(FILE* file, int id) {
@@ -141,7 +144,8 @@ void PrRd(PR_REQ* request) {
 	int offset = addr & 0x3;
 	int index = (addr >> 2) & 0x3F;
 	int tag = (addr >> 8) & 0xFFF;
-
+	
+	
 
 	TSRAM* tsram = tsrams_array[core_index];
 	DSRAM* dsram = dsrams_array[core_index];
@@ -490,12 +494,15 @@ void check_if_req_fulfilled() {
 	if (curr_request->done) {
 		PR_REQ* pr_req = pr_requests[curr_request->core_index];
 		int core_ind = curr_request->core_index;
+		int index = curr_request->index;
 		requests[core_ind] = NULL;
 		
 
 		if (pr_req->type == PRRD) { // so core wants to read the updated data
 			pr_req->data = dsrams_array[core_ind]->sram[curr_request->index][curr_request->offset]; // giving the core the data from cache
-			if (tsrams_array[pr_req->core_index]->MESI[pr_req->index] == INVALID) tsrams_array[pr_req->core_index]->MESI[pr_req->index] = SHARED;
+			if (tsrams_array[core_ind]->MESI[index] == INVALID) {
+				tsrams_array[core_ind]->MESI[index] = SHARED;
+			}
 		}
 		pr_req->done = 1; // telling the core that it can continue (use the data)
 		pr_requests[core_ind] = NULL;
