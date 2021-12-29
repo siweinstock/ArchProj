@@ -82,5 +82,5 @@ void dump_memory(FILE* file);
 void init_caches();
 void free_caches();
 int choose_core();
-void bus_step();
+void bus_step(FILE* trace_file);
 void PrRd(PR_REQ* request);

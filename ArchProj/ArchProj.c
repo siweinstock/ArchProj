@@ -502,9 +502,8 @@ int main(int argc, char* argv[]) {
             }
 
         }
-
-        bus_step();
-        print_bus_trace_line(files[15]);
+        
+        bus_step(files[15]);
         bus_cycle++;
         //getchar();
 

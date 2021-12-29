@@ -511,7 +511,7 @@ void check_if_req_fulfilled() {
 }
 
 
-void bus_step() {
+void bus_step(FILE* trace_file) {
 
 	int core_to_serve;
 	if (bus_cmd == NO_CMD) {
@@ -530,6 +530,7 @@ void bus_step() {
 
 	bus_logic_before_snooping();
 
+	print_bus_trace_line(trace_file); // print to bus_trace
 
 	for (int i = 0; i < 4; i++) { // all the cores are snooping
 		core_i_snoop(i);
