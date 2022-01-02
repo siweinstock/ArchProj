@@ -142,6 +142,7 @@ void execute(int id) {
     exmem[id]->rd = idex[id]->rd;
     exmem[id]->rs = idex[id]->rs;
     exmem[id]->rt = idex[id]->rt;
+    exmem[id]->imm = idex[id]->imm;
 
     exmem[id]->pr_req = NULL;   // remove preveous request
 
@@ -176,37 +177,55 @@ void execute(int id) {
 
     case BEQ:
         if (exmem[id]->ReadData1 == exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BNE:
         if (exmem[id]->ReadData1 != exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BLT:
         if (exmem[id]->ReadData1 < exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BGT:
         if (exmem[id]->ReadData1 > exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BLE:
         if (exmem[id]->ReadData1 <= exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BGE:
         if (exmem[id]->ReadData1 >= exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = exmem[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
@@ -224,6 +243,8 @@ void execute(int id) {
         exmem[id]->pr_req->type = PRRD;
         exmem[id]->pr_req->addr = exmem[id]->ReadData1 + exmem[id]->ReadData2;
         exmem[id]->pr_req->core_index = id;
+
+        //printf("LW R[%d] = MEM[R[%d] + R[%d]]\n", exmem[id]->rd, exmem[id]->rs, exmem[id]->rt);
 
         break;
     case SW:
@@ -256,7 +277,7 @@ void memory(int id) {
     memwb[id]->rs = exmem[id]->rs;
     memwb[id]->rt = exmem[id]->rt;
     memwb[id]->result = exmem[id]->result;
-    memwb[id]->result = exmem[id]->result;
+    //memwb[id]->result = exmem[id]->result;
     memwb[id]->RegWrite = exmem[id]->RegWrite;
     memwb[id]->pr_req = exmem[id]->pr_req;
 
@@ -273,6 +294,7 @@ void memory(int id) {
     }
     // store
     if (exmem[id]->opcode == SW && !memwb[id]->pr_req->done) {
+        printf("Store value %d at address %d\n", memwb[id]->pr_req->data, memwb[id]->pr_req->addr);
         PrWr(memwb[id]->pr_req);
 
         if (requests[id] == NULL)
@@ -285,6 +307,8 @@ void memory(int id) {
 int writeback(int id) {
     // if LW is done read correct data
     if (memwb[id]->pr_req != NULL && memwb[id]->opcode == LW && memwb[id]->pr_req->done == 1) {
+        //if (id == 0)
+            //printf("Loaded value %d from address %d into reg %d\n", memwb[id]->pr_req->data, memwb[id]->pr_req->addr, memwb[id]->rd);
         memwb[id]->result = memwb[id]->pr_req->data;
     }
 
@@ -292,12 +316,14 @@ int writeback(int id) {
     memcpy(R[id], tmp[id], 16 * sizeof(int));
 
     // update registers to be written next cycle
-    if (memwb[id]->RegWrite) {
+    if (memwb[id]->RegWrite && !(memwb[id]->opcode == LW && cachestall[id])) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
 
         // make sure updated values are read
         idex[id]->ReadData1 = (idex[id]->rs == 1 ? idex[id]->imm : R[id][idex[id]->rs]);
         idex[id]->ReadData2 = (idex[id]->rt == 1 ? idex[id]->imm : R[id][idex[id]->rt]);
+
+        memwb[id]->RegWrite = 0;
     }
 
 }
@@ -393,6 +419,59 @@ void trace(int id) {
    
 }
 
+void traceout(int id) {
+    if (id == 0) {
+        fprintf(stdout, "%d ", count[id]);
+
+        char stateF[10];
+        char stateD[10];
+        char stateE[10];
+        char stateM[10];
+        char stateW[10];
+
+        if (state[id]->F < 0) {
+            fprintf(stdout, "--- ");
+        }
+        else {
+            fprintf(stdout, "%03X ", state[id]->F);
+        }
+
+        if (state[id]->D < 0) {
+            fprintf(stdout, "--- ");
+        }
+        else {
+            fprintf(stdout, "%03X ", state[id]->D);
+        }
+
+        if (state[id]->E < 0) {
+            fprintf(stdout, "--- ");
+        }
+        else {
+            fprintf(stdout, "%03X ", state[id]->E);
+        }
+
+        if (state[id]->M < 0) {
+            fprintf(stdout, "--- ");
+        }
+        else {
+            fprintf(stdout, "%03X ", state[id]->M);
+        }
+
+        if (state[id]->W < 0) {
+            fprintf(stdout, "--- ");
+        }
+        else {
+            fprintf(stdout, "%03X ", state[id]->W);
+        }
+
+        for (int j = 2; j < 16; j++) {
+            fprintf(stdout, "%08X ", R[id][j]);
+        }
+        fprintf(stdout, "\n");
+    }
+
+}
+
 void regout(int id) {
     for (int j = 2; j < 16; j++) {
         fprintf(files[id + 7], "%08X\n", R[id][j]);
@@ -457,6 +536,8 @@ int main(int argc, char* argv[]) {
             if (halting[id])
                 halt_prop[id]++;
 
+            if (count[0] == 126 && id == 0)
+                printf("check\n");
 
             // pipeline simulation
             writeback(id);
@@ -491,6 +572,7 @@ int main(int argc, char* argv[]) {
             }
 
             trace(id);  // add current round to trace file
+            //traceout(id);
             count[id]++;
 
             if (idex[id]->ALUOp == 0x14) {
