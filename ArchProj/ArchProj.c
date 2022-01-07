@@ -142,6 +142,7 @@ void execute(int id) {
     exmem[id]->rd = idex[id]->rd;
     exmem[id]->rs = idex[id]->rs;
     exmem[id]->rt = idex[id]->rt;
+    exmem[id]->imm = idex[id]->imm;
 
     exmem[id]->pr_req = NULL;   // remove preveous request
 
@@ -176,37 +177,55 @@ void execute(int id) {
 
     case BEQ:
         if (exmem[id]->ReadData1 == exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BNE:
         if (exmem[id]->ReadData1 != exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BLT:
         if (exmem[id]->ReadData1 < exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BGT:
         if (exmem[id]->ReadData1 > exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BLE:
         if (exmem[id]->ReadData1 <= exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
     case BGE:
         if (exmem[id]->ReadData1 >= exmem[id]->ReadData2) {
-            idex[id]->addr = idex[id]->rd & 0x3FF;
+            if (exmem[id]->rd == 1)
+                idex[id]->addr = exmem[id]->imm & 0x3FF;
+            else
+                idex[id]->addr = idex[id]->rd & 0x3FF;
             branch_taken[id] = 1;
         }
         break;
@@ -262,7 +281,7 @@ void memory(int id) {
 
     // load
     if (exmem[id]->opcode == LW && !memwb[id]->pr_req->done) {
-       
+
         PrRd(memwb[id]->pr_req);
         // cache hit - fetch data from cache
         if (memwb[id]->pr_req->done) {
@@ -278,7 +297,7 @@ void memory(int id) {
         if (requests[id] == NULL)
             cachestall[id] = 0;
     }
-    
+
 }
 
 // writeback RTL
@@ -292,12 +311,14 @@ int writeback(int id) {
     memcpy(R[id], tmp[id], 16 * sizeof(int));
 
     // update registers to be written next cycle
-    if (memwb[id]->RegWrite) {
+    if (memwb[id]->RegWrite && !(memwb[id]->opcode == LW && cachestall[id])) {
         tmp[id][memwb[id]->rd] = memwb[id]->result;
 
         // make sure updated values are read
         idex[id]->ReadData1 = (idex[id]->rs == 1 ? idex[id]->imm : R[id][idex[id]->rs]);
         idex[id]->ReadData2 = (idex[id]->rt == 1 ? idex[id]->imm : R[id][idex[id]->rt]);
+
+        memwb[id]->RegWrite = 0;
     }
 
 }
@@ -343,7 +364,7 @@ int core_stopped(int id) {
 }
 
 void trace(int id) {
-    fprintf(files[id+11], "%d ", count[id]);
+    fprintf(files[id + 11], "%d ", count[id]);
 
     char stateF[10];
     char stateD[10];
@@ -390,7 +411,7 @@ void trace(int id) {
         fprintf(files[id + 11], "%08X ", R[id][j]);
     }
     fprintf(files[id + 11], "\n");
-   
+
 }
 
 void regout(int id) {
@@ -401,14 +422,14 @@ void regout(int id) {
 
 void stats(int id) {
     fprintf(files[id + 24], "cycles %d\n", count[id]);
-    fprintf(files[id + 24], "instructions %d\n", insts[id]+1);
+    fprintf(files[id + 24], "instructions %d\n", insts[id] + 1);
     fprintf(files[id + 24], "read_hit %d\n", num_of_read_hits[id]);
     fprintf(files[id + 24], "write_hit %d\n", num_of_write_hits[id]);
     fprintf(files[id + 24], "read_miss %d\n", num_of_read_misses[id]);
     fprintf(files[id + 24], "write_miss %d\n", num_of_write_misses[id]);
     fprintf(files[id + 24], "decode_stall %d\n", decode_stall[id]);
     fprintf(files[id + 24], "mem_stall %d\n", mem_stall[id]);
-    
+
 }
 
 int main(int argc, char* argv[]) {
@@ -449,7 +470,7 @@ int main(int argc, char* argv[]) {
         start = 0;
 
         for (id = 0; id < 4; id++) {
-            
+
             // core stopped and pipeline cleared
             if (core_stopped(id) && state[id]->D == -1 && state[id]->M == -1 && state[id]->E == -1) {
                 continue;
@@ -502,7 +523,7 @@ int main(int argc, char* argv[]) {
             }
 
         }
-        
+
         bus_step(files[15]);
         bus_cycle++;
         //getchar();
@@ -512,8 +533,8 @@ int main(int argc, char* argv[]) {
     // populate output files
     for (int i = 0; i < 4; i++) {
         regout(i);
-        dump_dsram(files[16+i], i);
-        dump_tsram(files[20+i], i);
+        dump_dsram(files[16 + i], i);
+        dump_tsram(files[20 + i], i);
         stats(i);
     }
     dump_memory(files[6]);
